@@ -72,10 +72,10 @@
       "description": "Auto-generated description for 4khdhub",
       "version": "1.0.0",
       "author": "Michat88",
-      "supportedTypes": ["movie","tv"],
+      "supportedTypes": ["movie", "tv"],
       "filename": "providers/4khdhub.js",
       "enabled": true,
-      "formats": ["mp4","m3u8"],
+      "formats": ["mp4", "m3u8"],
       "logo": "https://i.postimg.cc/x121F0ww/4khdhub.png",
       "contentLanguage": ["en"]
     },
