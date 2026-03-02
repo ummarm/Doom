@@ -253,14 +253,54 @@ async function extractDownloadLinks(movieUrl, targetYear = null) {
     const movieTitle = $('h1').first().text().trim();
 
     // Find all download links (the new SID links) and their associated quality information
-$('a[href*="tech."], a[href*="hubcloud"], a[href*="driveleech"], a[href*="driveseed"], a[href*="pixeldrain"], a[href*="download"]').each((index, element) => {
+// Extract download links from movie page (updated for current UHDMovies)
+async function extractDownloadLinks(movieUrl, targetYear = null) {
+  try {
+    console.log(`[UHDMovies] Extracting links from: ${movieUrl}`);
 
-  const link = $(element).attr('href');
+    const response = await makeRequest(movieUrl);
+    const html = await response.text();
+    const links = [];
+    const $ = cheerio.load(html);
 
-      if (link && !links.some(item => item.url === link)) {
-        let quality = 'Unknown Quality';
-        let size = 'Unknown';
+    // Grab the movie title if available
+    const movieTitle = $('h1').first().text().trim();
 
+    // Scan the main content for any download links (regex approach)
+    $('.entry-content, pre, p, div').each((i, el) => {
+      const textHtml = $(el).html();
+      if (!textHtml) return;
+
+      // Regex to find any known download links
+      const linkMatches = textHtml.match(/https?:\/\/(?:tech\.|hubcloud|driveleech|driveseed|pixeldrain|download)[^"'\s<]+/gi);
+      if (linkMatches) {
+        linkMatches.forEach(link => {
+          if (!links.some(item => item.url === link)) {
+            // Extract possible size from the surrounding text
+            const rawText = $(el).text().trim();
+            const sizeMatch = rawText.match(/\[([0-9.,]+[KMGT]B[^\]]*)\]/i);
+            const size = sizeMatch ? sizeMatch[1] : 'Unknown';
+            const cleanQuality = extractCleanQuality(rawText);
+
+            links.push({
+              url: link,
+              quality: cleanQuality,
+              size: size,
+              rawQuality: rawText
+            });
+          }
+        });
+      }
+    });
+
+    console.log(`[UHDMovies] Found ${links.length} download links`);
+    return links;
+
+  } catch (error) {
+    console.error(`[UHDMovies] Failed to extract links: ${error.message}`);
+    return [];
+  }
+}
         // Method 1: Look for quality in the closest preceding paragraph or heading
         const prevElement = $(element).closest('p').prev();
         if (prevElement.length > 0) {
