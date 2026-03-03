@@ -196,17 +196,5 @@
       "logo": "https://dramafull.cc/favicon.ico",
       "contentLanguage": ["en", "ko", "zh", "ja"] 
     },
-    {
-      "id": "viu",
-      "name": "Viu",
-      "description": "Asian drama — viu.com Arabic region",
-      "version": "1.0.0",
-      "author": "jellter",
-      "supportedTypes": ["tv"],
-      "filename": "providers/viu.js",
-      "enabled": true,
-      "formats": ["m3u8"],
-      "contentLanguage": ["ar", "ko", "zh"]
-    },
   ]
 }
