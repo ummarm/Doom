@@ -1,137 +1,220 @@
-// ── Shared ───────────────────────────────────────────────────────────────────
-var DEFAULT_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Accept-Language': 'ar,en;q=0.9',
-  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+// ── Headers ─────────────────────────────────────
+const DEFAULT_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36',
+  'Accept-Language': 'en-US,en;q=0.9',
+  Accept: '*/*',
 };
 
-function httpGet(url, extraHeaders) {
-  var headers = Object.assign({}, DEFAULT_HEADERS, extraHeaders || {});
-  return fetch(url, { headers: headers }).then(function(res) {
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    return res.text();
+// ── HTTP ───────────────────────────────────────
+async function httpGet(url, extraHeaders = {}) {
+  const res = await fetch(url, {
+    headers: { ...DEFAULT_HEADERS, ...extraHeaders },
   });
+
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.text();
 }
 
-function extractDirectSources(html) {
-  var sources = [];
-  var patterns = [
-    /["'](https?:\/\/[^"']+\.m3u8[^"']*?)["']/g,
-    /["'](https?:\/\/[^"']+\.mp4[^"']*?)["']/g,
-    /file:\s*["'](https?:\/\/[^"']+)["']/g,
-    /src:\s*["'](https?:\/\/[^"']+\.m3u8[^"']*?)["']/g,
+// ── Stream Detection ───────────────────────────
+function extractStreams(html) {
+  const results = new Set();
+
+  const patterns = [
+    /(https?:\/\/[^\s"'<>]+\.m3u8[^\s"'<>]*)/gi,
+    /(https?:\/\/[^\s"'<>]+\.mp4[^\s"'<>]*)/gi,
+    /file\s*:\s*["']([^"']+)["']/gi,
+    /source\s*src\s*=\s*["']([^"']+)["']/gi,
+    /data-url\s*=\s*["']([^"']+)["']/gi,
+    /data-hls\s*=\s*["']([^"']+)["']/gi,
   ];
-  patterns.forEach(function(re) {
-    var m;
-    while ((m = re.exec(html)) !== null) {
-      if (sources.indexOf(m[1]) === -1) sources.push(m[1]);
-    }
-  });
-  return sources;
-}
 
-function extractIframes(html) {
-  var iframes = [];
-  var re = /<iframe[^>]+(?:src|data-src)=["']([^"']+)["']/gi;
-  var m;
-  while ((m = re.exec(html)) !== null) {
-    if (m[1].indexOf('http') === 0) iframes.push(m[1]);
+  for (const re of patterns) {
+    let m;
+    while ((m = re.exec(html))) {
+      results.add(m[1]);
+    }
   }
-  return iframes;
+
+  return [...results];
 }
 
-function normalizeQuality(str) {
-  if (!str) return 'HD';
-  if (/4k|2160/i.test(str)) return '4K';
-  if (/1080/i.test(str)) return '1080p';
-  if (/720/i.test(str)) return '720p';
-  if (/480/i.test(str)) return '480p';
-  return 'HD';
+// ── JWPlayer ───────────────────────────────────
+function extractJW(html) {
+  const results = [];
+
+  const re = /sources\s*:\s*\[(.*?)\]/gs;
+  const block = html.match(re);
+
+  if (!block) return results;
+
+  const urlRe = /file\s*:\s*["']([^"']+)["']/g;
+  let m;
+
+  while ((m = urlRe.exec(block[1]))) {
+    results.push(m[1]);
+  }
+
+  return results;
 }
 
-function makeStream(name, url, quality, referer) {
-  var s = { name: name, title: quality, url: url, quality: quality };
-  if (referer) s.headers = { 'Referer': referer, 'User-Agent': DEFAULT_HEADERS['User-Agent'] };
-  return s;
+// ── Iframes ────────────────────────────────────
+function extractIframes(html) {
+  const frames = [];
+  const re = /<iframe[^>]+src=["']([^"']+)["']/gi;
+
+  let m;
+  while ((m = re.exec(html))) {
+    let src = m[1];
+
+    if (src.startsWith("//")) src = "https:" + src;
+
+    if (src.startsWith("http")) frames.push(src);
+  }
+
+  return frames;
 }
 
-function fetchStreamsFromPage(name, pageUrl, base) {
-  return httpGet(pageUrl, { Referer: base }).then(function(html) {
-    var streams = [];
-    extractDirectSources(html).forEach(function(u) {
-      var q = normalizeQuality(u);
-      streams.push(makeStream(name, u, q, pageUrl));
-    });
+// ── Quality ────────────────────────────────────
+function qualityFromUrl(url) {
+  if (/2160|4k/i.test(url)) return "4K";
+  if (/1080/i.test(url)) return "1080p";
+  if (/720/i.test(url)) return "720p";
+  if (/480/i.test(url)) return "480p";
+  return "HD";
+}
+
+// ── Stream Builder ─────────────────────────────
+function makeStream(source, url, referer) {
+  return {
+    name: source,
+    title: qualityFromUrl(url),
+    quality: qualityFromUrl(url),
+    url,
+    headers: {
+      Referer: referer,
+      "User-Agent": DEFAULT_HEADERS["User-Agent"],
+    },
+  };
+}
+
+// ── Extract from page ──────────────────────────
+async function fetchStreamsFromPage(name, url, base) {
+  try {
+    const html = await httpGet(url, { Referer: base });
+
+    const streams = [];
+
+    for (const u of extractStreams(html))
+      streams.push(makeStream(name, u, url));
+
+    for (const u of extractJW(html))
+      streams.push(makeStream(name, u, url));
+
     if (streams.length) return streams;
-    var iframes = extractIframes(html);
-    return Promise.all(iframes.slice(0, 3).map(function(src) {
-      return httpGet(src, { Referer: pageUrl }).then(function(ih) {
-        return extractDirectSources(ih).map(function(u) {
-          return makeStream(name, u, normalizeQuality(u), src);
-        });
-      }).catch(function() { return []; });
-    })).then(function(r) { return r.reduce(function(a, b) { return a.concat(b); }, streams); });
-  });
+
+    const iframes = extractIframes(html).slice(0, 4);
+
+    const iframeStreams = await Promise.all(
+      iframes.map(async (frame) => {
+        try {
+          const ih = await httpGet(frame, { Referer: url });
+          return extractStreams(ih).map((u) =>
+            makeStream(name, u, frame)
+          );
+        } catch {
+          return [];
+        }
+      })
+    );
+
+    return iframeStreams.flat();
+  } catch {
+    return [];
+  }
 }
 
-function searchSite(name, base, query, mediaType) {
-  var url = base + '/?s=' + encodeURIComponent(query);
-  return httpGet(url, { Referer: base }).then(function(html) {
-    var items = [];
-    var re = /<article[^>]*>([\s\S]*?)<\/article>/gi;
-    var m;
-    while ((m = re.exec(html)) !== null) {
-      var block = m[1];
-      var titleM = block.match(/<h[23][^>]*>([^<]+)<\/h[23]>/i);
-      var linkM = block.match(/href=["'](https?:\/\/[^"']+)["']/i);
-      if (titleM && linkM) items.push({ name: name, base: base, title: titleM[1].trim(), url: linkM[1], isMovie: /film|movie/.test(linkM[1]) });
-    }
-    return items;
-  }).catch(function() { return []; });
+// ── Search ─────────────────────────────────────
+async function searchSite(name, base, query) {
+  const urls = [
+    `${base}/?s=${encodeURIComponent(query)}`,
+    `${base}/search/${encodeURIComponent(query)}`,
+    `${base}/?story=${encodeURIComponent(query)}`,
+  ];
+
+  for (const url of urls) {
+    try {
+      const html = await httpGet(url, { Referer: base });
+
+      const results = [];
+
+      const re = /<a[^>]+href=["'](https?:\/\/[^"']+)["'][^>]*>(.*?)<\/a>/gi;
+      let m;
+
+      while ((m = re.exec(html))) {
+        const title = m[2].replace(/<[^>]+>/g, "").trim();
+
+        if (title.length > 2)
+          results.push({
+            name,
+            base,
+            title,
+            url: m[1],
+          });
+      }
+
+      if (results.length) return results;
+    } catch {}
+  }
+
+  return [];
 }
 
-// ── Sources ───────────────────────────────────────────────────────────────────
-var SOURCES = [
-  { id: 'cimawbas', base: 'https://cimawbas.org' },
-  { id: 'egybest',  base: 'https://egybest.la' },
-  { id: 'mycima',   base: 'https://mycima.horse' },
-  { id: 'flowind',  base: 'https://flowind.net' },
-  { id: 'aksv',     base: 'https://ak.sv' },
-  { id: 'fajer',    base: 'https://fajer.show' },
-  { id: 'x7k9f',   base: 'https://x7k9f.sbs' },
-  { id: 'asd',      base: 'https://asd.pics' },
-  { id: 'laroza',   base: 'https://q.larozavideo.net' },
-  { id: 'animezid', base: 'https://eg.animezid.cc' },
-  { id: 'arabic-toons', base: 'https://arabic-toons.com' },
+// ── Sources ────────────────────────────────────
+const SOURCES = [
+  { id: "cimawbas", base: "https://cimawbas.org" },
+  { id: "egybest", base: "https://egybest.la" },
+  { id: "mycima", base: "https://mycima.horse" },
+  { id: "flowind", base: "https://flowind.net" },
+  { id: "aksv", base: "https://ak.sv" },
+  { id: "fajer", base: "https://fajer.show" },
+  { id: "animezid", base: "https://eg.animezid.cc" },
+  { id: "arabic-toons", base: "https://arabic-toons.com" },
 ];
 
-// ── Main ─────────────────────────────────────────────────────────────────────
-function getStreams(tmdbId, mediaType, season, episode) {
-  console.log('[DOMTY] getStreams:', tmdbId, mediaType, season, episode);
-  var query = mediaType === 'tv'
-    ? tmdbId + ' s' + (season || 1) + 'e' + (episode || 1)
-    : tmdbId;
+// ── Main ───────────────────────────────────────
+async function getStreams(tmdbId, mediaType, season, episode, title) {
+  console.log("NUVIO SEARCH:", title);
 
-  var promises = SOURCES.map(function(source) {
-    return searchSite(source.id, source.base, query, mediaType).then(function(results) {
-      if (!results.length) return [];
-      var match = results[0];
-      for (var i = 0; i < results.length; i++) {
-        if (mediaType === 'movie' && results[i].isMovie) { match = results[i]; break; }
-        if (mediaType !== 'movie' && !results[i].isMovie) { match = results[i]; break; }
-      }
-      return fetchStreamsFromPage(source.id, match.url, source.base);
-    }).catch(function() { return []; });
+  let query = title;
+
+  if (mediaType === "tv")
+    query = `${title} season ${season || 1}`;
+
+  const promises = SOURCES.map(async (source) => {
+    const results = await searchSite(source.id, source.base, query);
+
+    if (!results.length) return [];
+
+    const match = results[0];
+
+    return fetchStreamsFromPage(
+      source.id,
+      match.url,
+      source.base
+    );
   });
 
-  return Promise.all(promises).then(function(results) {
-    var all = results.reduce(function(a, b) { return a.concat(b); }, []);
-    var seen = {};
-    return all.filter(function(s) {
-      if (seen[s.url]) return false;
-      seen[s.url] = true;
-      return true;
-    });
+  const results = await Promise.all(promises);
+
+  const all = results.flat();
+
+  const seen = new Set();
+
+  return all.filter((s) => {
+    if (seen.has(s.url)) return false;
+    seen.add(s.url);
+    return true;
   });
 }
 
