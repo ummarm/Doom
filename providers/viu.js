@@ -1,4 +1,27 @@
-const NAME = "Viu";
+const NAME = "viu";
+
+async function extractM3U8(url, referer) {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        Referer: referer
+      }
+    });
+
+    const html = await res.text();
+
+    const match =
+      html.match(/file:\s*"(https:[^"]+\.m3u8[^"]*)"/) ||
+      html.match(/"(https:[^"]+\.m3u8[^"]*)"/);
+
+    if (match) return match[1];
+
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 async function getStreams(tmdbId, type, season, episode) {
   console.log("[viu] getStreams:", tmdbId, type, season, episode);
@@ -6,55 +29,17 @@ async function getStreams(tmdbId, type, season, episode) {
   const s = season || 1;
   const e = episode || 1;
 
-  const streams = [];
-
-  const providers = [
+  const embeds = [
     {
-      name: "VidSrc",
-      movie: `https://vidsrc.xyz/embed/movie/${tmdbId}`,
-      tv: `https://vidsrc.xyz/embed/tv/${tmdbId}/${s}/${e}`,
+      url:
+        type === "movie"
+          ? `https://vidsrc.xyz/embed/movie/${tmdbId}`
+          : `https://vidsrc.xyz/embed/tv/${tmdbId}/${s}/${e}`,
       referer: "https://vidsrc.xyz/"
     },
     {
-      name: "VidSrc.to",
-      movie: `https://vidsrc.to/embed/movie/${tmdbId}`,
-      tv: `https://vidsrc.to/embed/tv/${tmdbId}/${s}/${e}`,
-      referer: "https://vidsrc.to/"
-    },
-    {
-      name: "2Embed",
-      movie: `https://www.2embed.cc/embed/${tmdbId}`,
-      tv: `https://www.2embed.cc/embedtv/${tmdbId}&s=${s}&e=${e}`,
-      referer: "https://www.2embed.cc/"
-    },
-    {
-      name: "MultiEmbed",
-      movie: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1`,
-      tv: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1&s=${s}&e=${e}`,
-      referer: "https://multiembed.mov/"
-    },
-    {
-      name: "SuperEmbed",
-      movie: `https://multiembed.mov/directstream.php?video_id=${tmdbId}&tmdb=1`,
-      tv: `https://multiembed.mov/directstream.php?video_id=${tmdbId}&tmdb=1&s=${s}&e=${e}`,
-      referer: "https://multiembed.mov/"
-    }
-  ];
-
-  for (const p of providers) {
-    streams.push({
-      name: NAME,
-      title: p.name,
-      url: type === "movie" ? p.movie : p.tv,
-      quality: "auto",
-      headers: {
-        Referer: p.referer,
-        "User-Agent": "Mozilla/5.0"
-      }
-    });
-  }
-
-  return streams;
-}
-
-module.exports = { getStreams };
+      url:
+        type === "movie"
+          ? `https://vidsrc.to/embed/movie/${tmdbId}`
+          : `https://vidsrc.to/embed/tv/${tmdbId}/${s}/${e}`,
+      referer:
