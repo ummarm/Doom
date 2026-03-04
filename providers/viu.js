@@ -1,85 +1,103 @@
 const NAME = "viu";
-const BASE = "https://www.viu.com";
 
-const DEFAULT_HEADERS = {
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-  "Accept-Language": "en-US,en;q=0.9"
-};
+async function getTMDB(title, mediaType) {
+  const url =
+    "https://www.themoviedb.org/search?query=" +
+    encodeURIComponent(title);
 
-async function httpGet(url) {
-  try {
-    const res = await fetch(url, { headers: DEFAULT_HEADERS });
-    if (!res.ok) return null;
-    return await res.text();
-  } catch {
-    return null;
-  }
-}
+  const res = await fetch(url, {
+    headers: { "User-Agent": "Mozilla/5.0" }
+  });
 
-function extractStreams(html) {
-  const streams = [];
+  const html = await res.text();
 
-  const regex = /(https?:\/\/[^"]+\.m3u8[^"]*)/g;
   let match;
 
-  while ((match = regex.exec(html))) {
-    streams.push({
-      name: NAME,
-      title: "Viu Stream",
-      url: match[1],
-      quality: "auto",
-      headers: { Referer: BASE }
-    });
+  if (mediaType === "tv") {
+    match = html.match(/\/tv\/(\d+)/);
+  } else {
+    match = html.match(/\/movie\/(\d+)/);
   }
 
-  return streams;
+  if (!match) {
+    const any = html.match(/\/(tv|movie)\/(\d+)/);
+    if (any) match = [any[0], any[2]];
+  }
+
+  if (!match) return null;
+
+  return match[1];
 }
 
 async function getStreams(title, mediaType, season, episode) {
-  console.log("[viu] searching:", title);
+  console.log("[viu] title:", title);
 
-  const searchUrl =
-    BASE +
-    "/ott/" +
-    "search?q=" +
-    encodeURIComponent(title);
+  try {
+    const tmdb = await getTMDB(title, mediaType);
 
-  const searchPage = await httpGet(searchUrl);
-
-  if (!searchPage) {
-    return fallback();
-  }
-
-  const linkMatch = searchPage.match(/\/ott\/[^"]+/);
-
-  if (!linkMatch) {
-    return fallback();
-  }
-
-  const showPage = await httpGet(BASE + linkMatch[0]);
-
-  if (!showPage) {
-    return fallback();
-  }
-
-  const streams = extractStreams(showPage);
-
-  if (streams.length) return streams;
-
-  return fallback();
-}
-
-function fallback() {
-  return [
-    {
-      name: NAME,
-      title: "Fallback Stream",
-      url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
-      quality: "720p",
-      headers: { Referer: BASE }
+    if (!tmdb) {
+      console.log("[viu] tmdb not found");
+      return [];
     }
-  ];
+
+    console.log("[viu] tmdb:", tmdb);
+
+    const s = season || 1;
+    const e = episode || 1;
+
+    const streams = [];
+
+    const providers = [
+      {
+        name: "VidSrc",
+        movie: `https://vidsrc.to/embed/movie/${tmdb}`,
+        tv: `https://vidsrc.to/embed/tv/${tmdb}/${s}/${e}`,
+        referer: "https://vidsrc.to/"
+      },
+      {
+        name: "VidSrc.me",
+        movie: `https://vidsrc.me/embed/movie/${tmdb}`,
+        tv: `https://vidsrc.me/embed/tv/${tmdb}/${s}/${e}`,
+        referer: "https://vidsrc.me/"
+      },
+      {
+        name: "2Embed",
+        movie: `https://www.2embed.cc/embed/${tmdb}`,
+        tv: `https://www.2embed.cc/embedtv/${tmdb}&s=${s}&e=${e}`,
+        referer: "https://www.2embed.cc/"
+      },
+      {
+        name: "MultiEmbed",
+        movie: `https://multiembed.mov/?video_id=${tmdb}&tmdb=1`,
+        tv: `https://multiembed.mov/?video_id=${tmdb}&tmdb=1&s=${s}&e=${e}`,
+        referer: "https://multiembed.mov/"
+      },
+      {
+        name: "SuperEmbed",
+        movie: `https://multiembed.mov/directstream.php?video_id=${tmdb}&tmdb=1`,
+        tv: `https://multiembed.mov/directstream.php?video_id=${tmdb}&tmdb=1&s=${s}&e=${e}`,
+        referer: "https://multiembed.mov/"
+      }
+    ];
+
+    for (const p of providers) {
+      streams.push({
+        name: NAME,
+        title: p.name,
+        url: mediaType === "movie" ? p.movie : p.tv,
+        quality: "auto",
+        headers: {
+          Referer: p.referer,
+          "User-Agent": "Mozilla/5.0"
+        }
+      });
+    }
+
+    return streams;
+  } catch (err) {
+    console.log("[viu] error:", err.message);
+    return [];
+  }
 }
 
 module.exports = { getStreams };
