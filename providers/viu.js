@@ -1,27 +1,4 @@
-const NAME = "viu";
-
-async function extractM3U8(url, referer) {
-  try {
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        Referer: referer
-      }
-    });
-
-    const html = await res.text();
-
-    const match =
-      html.match(/file:\s*"(https:[^"]+\.m3u8[^"]*)"/) ||
-      html.match(/"(https:[^"]+\.m3u8[^"]*)"/);
-
-    if (match) return match[1];
-
-    return null;
-  } catch {
-    return null;
-  }
-}
+const NAME = "Viu";
 
 async function getStreams(tmdbId, type, season, episode) {
   console.log("[viu] getStreams:", tmdbId, type, season, episode);
@@ -29,17 +6,44 @@ async function getStreams(tmdbId, type, season, episode) {
   const s = season || 1;
   const e = episode || 1;
 
-  const embeds = [
+  const streams = [];
+
+  const sources = [
     {
-      url:
-        type === "movie"
-          ? `https://vidsrc.xyz/embed/movie/${tmdbId}`
-          : `https://vidsrc.xyz/embed/tv/${tmdbId}/${s}/${e}`,
-      referer: "https://vidsrc.xyz/"
+      name: "VidFast",
+      movie: `https://vidfast.pro/movie/${tmdbId}`,
+      tv: `https://vidfast.pro/tv/${tmdbId}/${s}/${e}`
     },
     {
-      url:
-        type === "movie"
-          ? `https://vidsrc.to/embed/movie/${tmdbId}`
-          : `https://vidsrc.to/embed/tv/${tmdbId}/${s}/${e}`,
-      referer:
+      name: "EmbedSu",
+      movie: `https://embed.su/embed/movie/${tmdbId}`,
+      tv: `https://embed.su/embed/tv/${tmdbId}/${s}/${e}`
+    },
+    {
+      name: "AutoEmbed",
+      movie: `https://autoembed.cc/embed/movie/${tmdbId}`,
+      tv: `https://autoembed.cc/embed/tv/${tmdbId}/${s}/${e}`
+    },
+    {
+      name: "PrimeWire",
+      movie: `https://primewire.tf/embed/movie/${tmdbId}`,
+      tv: `https://primewire.tf/embed/tv/${tmdbId}/${s}/${e}`
+    }
+  ];
+
+  for (const src of sources) {
+    streams.push({
+      name: NAME,
+      title: src.name,
+      url: type === "movie" ? src.movie : src.tv,
+      quality: "auto",
+      headers: {
+        "User-Agent": "Mozilla/5.0"
+      }
+    });
+  }
+
+  return streams;
+}
+
+module.exports = { getStreams };
