@@ -1,127 +1,137 @@
-// Domty Arabic Provider (Fixed)
-
 const PROVIDER_NAME = "Domty";
-const TMDB_API = "https://api.themoviedb.org/3";
+
 const TMDB_KEY = "439c478a771f35c05022f9feabcca01c";
 
 const SOURCES = [
   { name: "FaselHD", base: "https://www.faselhd.watch" },
   { name: "CimaNow", base: "https://cimanow.cc" },
-  { name: "EgyBest", base: "https://wecima.movie" },
-  { name}
-
-function searchSite(name, base, query, mediaType) {
-
-  var url = base + '/?s=' + encodeURIComponent(query);
-
-  return httpGet(url, { Referer: base })
-    .then(function(html) {
-
-      var items = [];
-      var re = /<article[^>]*>([\s\S]*?)<\/article>/gi;
-      var m;
-
-      while ((m = re.exec(html)) !== null) {
-
-        var block = m[1];
-
-        var titleM = block.match(/<h[23][^>]*>([^<]+)<\/h[23]>/i);
-        var linkM = block.match(/href=["'](https?:\/\/[^"']+)["']/i);
-
-        if (titleM && linkM) {
-
-          items.push({
-            name: name,
-            base: base,
-            title: titleM[1].trim(),
-            url: linkM[1],
-            isMovie: /film|movie/.test(linkM[1])
-          });
-
-        }
-      }
-
-      return items;
-
-    }).catch(function() {
-      return [];
-    });
-}
-
-// ── Sources ───────────────────────────────────────────────────────────────────
-var SOURCES = [
-  { id: 'cimawbas', base: 'https://cimawbas.org' },
-  { id: 'egybest', base: 'https://egybest.la' },
-  { id: 'mycima', base: 'https://mycima.horse' },
-  { id: 'flowind', base: 'https://flowind.net' },
-  { id: 'aksv', base: 'https://ak.sv' },
-  { id: 'fajer', base: 'https://fajer.show' },
-  { id: 'x7k9f', base: 'https://x7k9f.sbs' },
-  { id: 'asd', base: 'https://asd.pics' },
-  { id: 'laroza', base: 'https://q.larozavideo.net' },
-  { id: 'animezid', base: 'https://eg.animezid.cc' },
-  { id: 'arabic-toons', base: 'https://arabic-toons.com' },
+  { name: "Akwam", base: "https://akwam.to" }
 ];
 
-// ── Main ─────────────────────────────────────────────────────────────────────
-function getStreams(tmdbId, mediaType, season, episode) {
+async function getTitle(id, type) {
 
-  console.log('[Domty] getStreams:', tmdbId, mediaType);
+  const url =
+    "https://api.themoviedb.org/3/" +
+    (type === "tv" ? "tv/" : "movie/") +
+    id +
+    "?api_key=" +
+    TMDB_KEY;
 
-  var query = mediaType === 'tv'
-    ? tmdbId + ' s' + (season || 1) + 'e' + (episode || 1)
-    : tmdbId;
+  const r = await fetch(url);
+  const j = await r.json();
 
-  var promises = SOURCES.map(function(source) {
+  return type === "tv" ? j.name : j.title;
+}
 
-    return searchSite(source.id, source.base, query, mediaType)
+async function request(url) {
 
-      .then(function(results) {
-
-        if (!results.length) return [];
-
-        var match = results[0];
-
-        for (var i = 0; i < results.length; i++) {
-
-          if (mediaType === 'movie' && results[i].isMovie) {
-            match = results[i];
-            break;
-          }
-
-          if (mediaType !== 'movie' && !results[i].isMovie) {
-            match = results[i];
-            break;
-          }
-
-        }
-
-        return fetchStreamsFromPage(source.id, match.url, source.base);
-
-      })
-
-      .catch(function() {
-        return [];
-      });
-
+  const r = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0",
+      "Referer": url
+    }
   });
 
-  return Promise.all(promises).then(function(results) {
+  return await r.text();
+}
 
-    var all = results.reduce(function(a, b) {
-      return a.concat(b);
-    }, []);
+function findLinks(html) {
 
-    var seen = {};
+  const links = [];
 
-    return all.filter(function(s) {
+  const videoRegex = /(https?:\/\/[^"' ]+\.(m3u8|mp4)[^"' ]*)/g;
 
-      if (seen[s.url]) return false;
+  let m;
 
-      seen[s.url] = true;
-      return true;
+  while ((m = videoRegex.exec(html)) !== null) {
 
+    links.push({
+      url: m[1],
+      name: "Arabic Server",
+      quality: "HD"
     });
 
+  }
+
+  const iframeRegex = /<iframe[^>]+src="([^"]+)"/g;
+
+  while ((m = iframeRegex.exec(html)) !== null) {
+
+    links.push({
+      url: m[1],
+      name: "Embed Server",
+      quality: "HD"
+    });
+
+  }
+
+  return links;
+}
+
+async function search(site, query) {
+
+  const url = site.base + "/?s=" + encodeURIComponent(query);
+
+  const html = await request(url);
+
+  const match = html.match(/<a href="([^"]+)"[^>]*class="[^"]*title[^"]*"/);
+
+  if (!match) return null;
+
+  return match[1];
+}
+
+async function getStreams(tmdbId, type, season, episode) {
+
+  console.log("[Domty] start");
+
+  const title = await getTitle(tmdbId, type);
+
+  let query = title;
+
+  if (type === "tv" && season) {
+    query += " season " + season;
+  }
+
+  const results = [];
+
+  for (const site of SOURCES) {
+
+    try {
+
+      const page = await search(site, query);
+
+      if (!page) continue;
+
+      const html = await request(page);
+
+      const links = findLinks(html);
+
+      links.forEach(l => {
+        results.push({
+          name: site.name + " | " + l.name,
+          url: l.url,
+          quality: l.quality
+        });
+      });
+
+    } catch (e) {
+      console.log("source failed", site.name);
+    }
+
+  }
+
+  const seen = new Set();
+
+  return results.filter(r => {
+    if (seen.has(r.url)) return false;
+    seen.add(r.url);
+    return true;
   });
-   }
+
+}
+
+module.exports = {
+  name: PROVIDER_NAME,
+  getStreams
+};
