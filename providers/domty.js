@@ -1,3 +1,4 @@
+console.error("DOMTY_PROVIDER_STARTED");
 console.log('[DOMTY] Provider Loaded');
 
 const TMDB = "https://api.themoviedb.org/3";
