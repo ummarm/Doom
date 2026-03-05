@@ -197,6 +197,19 @@
       "contentLanguage": ["ko", "ch", "ja", "th"]
     },
     {
+      "id": "onetouchtv",
+      "name": "OneTouchTV",
+      "description": "Asian Drama & Anime streaming",
+      "version": "1.0.0",
+      "author": "",
+      "supportedTypes": ["movie", "tv"],
+      "filename": "providers/onetouchtv.js",
+      "enabled": true,
+      "formats": ["mp4", "m3u8"],
+      "logo": "",
+      "contentLanguage": ["ko"]
+    },
+    {
       "id": "dramafull",
       "name": "DramaFull",
       "description": "DramaFull provider for Nuvio. Specializes in Asian dramas.",
