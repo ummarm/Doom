@@ -1,8 +1,6 @@
 const MAIN_URL = Buffer.from("aHR0cHM6Ly9hcGkzLmRldmNvcnAubWU=", "base64").toString("utf8");
 
 function decryptString(data) {
-    // Onetouchtv API already returns readable JSON in most cases
-    // If encrypted, this fallback still parses correctly
     try {
         if (data.startsWith("{") || data.startsWith("[")) return data;
         return Buffer.from(data, "base64").toString("utf8");
@@ -11,106 +9,90 @@ function decryptString(data) {
     }
 }
 
-function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
+async function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
 
-    return new Promise(async (resolve) => {
+    try {
 
-        try {
+        const TMDB_KEY = "b030404650f279792a8d3287232358e3";
 
-            const TMDB_KEY = "b030404650f279792a8d3287232358e3";
+        const tmdb = await fetch(
+            `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_KEY}`
+        ).then(r => r.json());
 
-            const tmdb = await fetch(
-                `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_KEY}`
-            ).then(r => r.json());
+        const title =
+            tmdb.title ||
+            tmdb.name ||
+            tmdb.original_title ||
+            tmdb.original_name;
 
-            const title =
-                tmdb.title ||
-                tmdb.name ||
-                tmdb.original_title ||
-                tmdb.original_name;
+        const searchRaw = await fetch(
+            `${MAIN_URL}/vod/search?page=1&keyword=${encodeURIComponent(title)}`
+        ).then(r => r.text());
 
-            if (!title) throw new Error("TMDB title not found");
+        const searchJson = JSON.parse(decryptString(searchRaw));
+        const results = searchJson.result || searchJson;
 
-            // SEARCH
-            const searchUrl =
-                `${MAIN_URL}/vod/search?page=1&keyword=${encodeURIComponent(title)}`;
+        if (!results || results.length === 0) return [];
 
-            const searchRaw = await fetch(searchUrl).then(r => r.text());
-            const searchJson = JSON.parse(decryptString(searchRaw));
+        const match = results[0];
+        const id = match.id;
 
-            const results = searchJson.result || searchJson;
+        const detailRaw = await fetch(`${MAIN_URL}/vod/${id}/detail`)
+            .then(r => r.text());
 
-            if (!results || results.length === 0)
-                throw new Error("No search results");
+        const detail = JSON.parse(decryptString(detailRaw));
+        const episodes = detail.episodes;
 
-            let match =
-                results.find(x =>
-                    x.title.toLowerCase() === title.toLowerCase()
-                ) || results[0];
+        if (!episodes || episodes.length === 0) return [];
 
-            const id = match.id;
+        let target;
 
-            // LOAD DETAIL
-            const detailRaw = await fetch(`${MAIN_URL}/vod/${id}/detail`)
-                .then(r => r.text());
-
-            const detail = JSON.parse(decryptString(detailRaw));
-
-            const episodes = detail.episodes;
-
-            if (!episodes || episodes.length === 0)
-                throw new Error("No episodes");
-
-            let target;
-
-            if (mediaType === "movie") {
-                target = episodes[episodes.length - 1];
-            } else {
-                target = episodes.find(
-                    e => parseInt(e.episode) === parseInt(episodeNum)
-                );
-            }
-
-            if (!target) throw new Error("Episode not found");
-
-            // EPISODE API
-            const epUrl =
-                `${MAIN_URL}/vod/${target.identifier}/episode/${target.playId}`;
-
-            const epRaw = await fetch(epUrl).then(r => r.text());
-            const epData = JSON.parse(decryptString(epRaw));
-
-            const streams = [];
-
-            if (epData.sources) {
-
-                epData.sources.forEach(src => {
-
-                    if (!src.url) return;
-
-                    streams.push({
-                        name: src.name || "OneTouchTV",
-                        title: "OneTouchTV",
-                        url: src.url,
-                        quality: src.quality || "Auto",
-                        headers: src.headers || {},
-                        provider: "onetouchtv"
-                    });
-
-                });
-
-            }
-
-            resolve(streams);
-
-        } catch (err) {
-
-            console.error("OneTouchTV error:", err);
-            resolve([]);
-
+        if (mediaType === "movie") {
+            target = episodes[episodes.length - 1];
+        } else {
+            target = episodes.find(e =>
+                parseInt(e.episode) === parseInt(episodeNum)
+            );
         }
 
-    });
+        if (!target) return [];
+
+        const epRaw = await fetch(
+            `${MAIN_URL}/vod/${target.identifier}/episode/${target.playId}`
+        ).then(r => r.text());
+
+        const epData = JSON.parse(decryptString(epRaw));
+
+        const streams = [];
+
+        const sources =
+            epData.sources ||
+            epData.data?.sources ||
+            [];
+
+        sources.forEach(src => {
+
+            if (!src.url) return;
+
+            streams.push({
+                name: src.name || "OneTouchTV",
+                title: "OneTouchTV",
+                url: src.url,
+                quality: src.quality || "Auto",
+                headers: src.headers || {},
+                provider: "onetouchtv"
+            });
+
+        });
+
+        return streams;
+
+    } catch (err) {
+
+        console.log("OneTouchTV Error:", err);
+        return [];
+
+    }
 }
 
 if (typeof module !== "undefined") {
