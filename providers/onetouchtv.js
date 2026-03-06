@@ -1,58 +1,37 @@
+const fetch = require("node-fetch");
+
+const PROVIDER_NAME = "Movix";
 const BASE = "https://movix.blog";
-const TMDB = "https://api.themoviedb.org/3/";
-const KEY = "8d6d91784c04f98f6e241852615c441b";
+const TMDB_KEY = "8d6d91784c04f98f6e241852615c441b";
 
-const HEADERS = {
-    "User-Agent": "Mozilla/5.0",
-    "Referer": BASE
-};
-
-function timeout(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-async function safeFetch(url, options = {}, ms = 8000) {
+async function safeFetch(url, options = {}) {
     try {
-
-        const controller = new AbortController();
-        const id = setTimeout(() => controller.abort(), ms);
-
-        const res = await fetch(url, {
-            ...options,
-            signal: controller.signal
-        });
-
-        clearTimeout(id);
-
+        const res = await fetch(url, options);
         if (!res.ok) return null;
-
         return await res.text();
-
     } catch (e) {
         return null;
     }
 }
 
 async function getTitle(tmdbId, mediaType) {
-
     try {
 
         const type = mediaType === "tv" ? "tv" : "movie";
 
         const res = await fetch(
-            `${TMDB}${type}/${tmdbId}?api_key=${KEY}&language=en-US`
+            `https://api.themoviedb.org/3/${type}/${tmdbId}?api_key=${TMDB_KEY}&language=en-US`
         );
 
-        const data = await res.json();
+        const json = await res.json();
 
-        return data.title || data.name || null;
+        return json.title || json.name || null;
 
     } catch (e) {
 
         return null;
 
     }
-
 }
 
 function extractStreams(html, referer) {
@@ -66,11 +45,10 @@ function extractStreams(html, referer) {
     while ((match = regex.exec(html)) !== null) {
 
         streams.push({
-            name: "Movix",
+            name: PROVIDER_NAME,
             title: "Movix Stream",
             url: match[1],
             quality: "HD",
-            source: "Movix",
             headers: {
                 Referer: referer,
                 "User-Agent": "Mozilla/5.0"
@@ -80,7 +58,6 @@ function extractStreams(html, referer) {
     }
 
     return streams;
-
 }
 
 async function scrapeMovix(title) {
@@ -89,7 +66,9 @@ async function scrapeMovix(title) {
 
     const searchHTML = await safeFetch(
         `${BASE}/search?q=${encodeURIComponent(title)}`,
-        { headers: HEADERS }
+        {
+            headers: { "User-Agent": "Mozilla/5.0" }
+        }
     );
 
     if (!searchHTML) return results;
@@ -104,8 +83,8 @@ async function scrapeMovix(title) {
 
     const pageHTML = await safeFetch(pageUrl, {
         headers: {
-            ...HEADERS,
-            Referer: BASE
+            "User-Agent": "Mozilla/5.0",
+            "Referer": BASE
         }
     });
 
@@ -121,8 +100,8 @@ async function scrapeMovix(title) {
 
         const playerHTML = await safeFetch(iframeUrl, {
             headers: {
-                ...HEADERS,
-                Referer: pageUrl
+                "User-Agent": "Mozilla/5.0",
+                "Referer": pageUrl
             }
         });
 
@@ -135,7 +114,6 @@ async function scrapeMovix(title) {
     }
 
     return results;
-
 }
 
 async function getStreams(tmdbId, mediaType, season, episode) {
@@ -155,7 +133,10 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         return [];
 
     }
-
 }
 
-module.exports = { getStreams };
+module.exports = {
+    name: PROVIDER_NAME,
+    supports: ["movie", "tv"],
+    getStreams
+};
