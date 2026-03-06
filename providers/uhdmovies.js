@@ -1,31 +1,30 @@
-const cheerio = require('cheerio-without-node-native');
+const cheerio = require("cheerio-without-node-native");
 
-const BASE_URL = "https://uhdmovies.ink";
+const BASE = "https://uhdmovies.ink";
 
-const WORKING_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-  'Accept': '*/*',
-  'Accept-Language': 'en-US,en;q=0.9',
-  'Referer': BASE_URL
+const headers = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120",
+  Referer: BASE,
 };
 
-function searchUHDMovies(query) {
-  const url = BASE_URL + "/?s=" + encodeURIComponent(query);
+function search(query) {
+  const url = BASE + "/?s=" + encodeURIComponent(query);
 
-  return fetch(url, { headers: WORKING_HEADERS })
-    .then(res => res.text())
-    .then(html => {
+  return fetch(url, { headers })
+    .then((r) => r.text())
+    .then((html) => {
       const $ = cheerio.load(html);
       const results = [];
 
-      $("article a").each((i, el) => {
-        const title = $(el).text().trim();
-        const link = $(el).attr("href");
+      $("article").each((i, el) => {
+        const link = $(el).find("a").attr("href");
+        const title = $(el).find("h2").text().trim();
 
         if (link && title) {
           results.push({
             title,
-            url: link
+            url: link,
           });
         }
       });
@@ -35,26 +34,65 @@ function searchUHDMovies(query) {
     .catch(() => []);
 }
 
-function extractStreams(pageUrl) {
-  return fetch(pageUrl, { headers: WORKING_HEADERS })
-    .then(res => res.text())
-    .then(html => {
+function getDownloadPages(url) {
+  return fetch(url, { headers })
+    .then((r) => r.text())
+    .then((html) => {
+      const $ = cheerio.load(html);
+      const pages = [];
 
+      $("a").each((i, el) => {
+        const link = $(el).attr("href");
+
+        if (!link) return;
+
+        if (
+          link.includes("hubcloud") ||
+          link.includes("driveleech") ||
+          link.includes("workers.dev") ||
+          link.includes("tech") ||
+          link.includes("download")
+        ) {
+          pages.push(link);
+        }
+      });
+
+      return pages;
+    })
+    .catch(() => []);
+}
+
+function extractVideo(url) {
+  return fetch(url, { headers })
+    .then((r) => r.text())
+    .then((html) => {
       const streams = [];
-      const regex = /(https?:\/\/[^"' ]+\.m3u8)/g;
 
-      let match;
+      const m3u8 = html.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g);
+      const mp4 = html.match(/https?:\/\/[^"' ]+\.mp4[^"' ]*/g);
 
-      while ((match = regex.exec(html)) !== null) {
-        streams.push({
-          name: "UHDMovies Server",
-          title: "UHDMovies Stream",
-          url: match[1],
-          quality: "HD",
-          size: "Unknown",
-          headers: WORKING_HEADERS,
-          provider: "uhdmovies"
-        });
+      if (m3u8) {
+        m3u8.forEach((u) =>
+          streams.push({
+            name: "UHDMovies",
+            title: "UHDMovies Stream",
+            url: u,
+            quality: "HD",
+            headers,
+          })
+        );
+      }
+
+      if (mp4) {
+        mp4.forEach((u) =>
+          streams.push({
+            name: "UHDMovies",
+            title: "UHDMovies MP4",
+            url: u,
+            quality: "HD",
+            headers,
+          })
+        );
       }
 
       return streams;
@@ -62,15 +100,10 @@ function extractStreams(pageUrl) {
     .catch(() => []);
 }
 
-function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
-
+function getStreams(tmdbId, mediaType, season, episode) {
   return new Promise((resolve) => {
-
-    const query = tmdbId;
-
-    searchUHDMovies(query)
-      .then(results => {
-
+    search(tmdbId)
+      .then((results) => {
         if (!results.length) {
           resolve([]);
           return;
@@ -78,18 +111,26 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
 
         const page = results[0].url;
 
-        extractStreams(page)
-          .then(streams => resolve(streams))
-          .catch(() => resolve([]));
+        getDownloadPages(page)
+          .then((pages) => {
+            if (!pages.length) {
+              resolve([]);
+              return;
+            }
 
+            const tasks = pages.map((p) => extractVideo(p));
+
+            Promise.all(tasks).then((all) => {
+              const streams = [].concat(...all);
+              resolve(streams);
+            });
+          })
+          .catch(() => resolve([]));
       })
       .catch(() => resolve([]));
   });
-
 }
 
-if (typeof module !== 'undefined' && module.exports) {
+if (typeof module !== "undefined") {
   module.exports = { getStreams };
-} else {
-  global.getStreams = getStreams;
 }
