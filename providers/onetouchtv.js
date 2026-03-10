@@ -1,11 +1,14 @@
-function getStreams(tmdbId, mediaType, seasonNum, episodeNum, title) {
+function getStreams(tmdbId, mediaType, season, episode) {
 
     return new Promise(function(resolve) {
+
+        let title = "wrecking crew"; // temporary test title
 
         let searchUrl = "https://atishmkv3.bond/?s=" + encodeURIComponent(title);
 
         fetch(searchUrl)
         .then(function(res){ return res.text(); })
+
         .then(function(html){
 
             let match = html.match(/href="(https:\/\/atishmkv3\.bond\/[^"]+)"/i);
@@ -25,7 +28,6 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum, title) {
                 return;
             }
 
-            // find rpmhub iframe
             let iframe = html.match(/https:\/\/atishmkv\.rpmhub\.site\/#([a-z0-9]+)/i);
 
             if(!iframe){
@@ -35,8 +37,7 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum, title) {
 
             let streamId = iframe[1];
 
-            // construct possible HLS path
-            let testStream = "https://atishmkv.rpmhub.site/hls/" + streamId + "/master.m3u8";
+            let testStream = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8";
 
             resolve([
                 {
