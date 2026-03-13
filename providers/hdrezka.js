@@ -699,7 +699,7 @@ function getStreams(tmdbId, mediaType = 'movie', season = null, episode = null) 
                 const serverPromises = servers.map(function(server) {
                 console.log(`[Xprime] Processing server: ${server.name}`);
                 
-                // Rage server requires a different endpoint (backend.xprime.tv) and TMDB id param
+                // Rage server requires a different endpoint (backend.xprime.stream) and TMDB id param
                 let serverUrl;
                 if (server.name === 'rage') {
                     if (type === 'tv' && season && episode) {
@@ -709,7 +709,7 @@ function getStreams(tmdbId, mediaType = 'movie', season = null, episode = null) 
                     }
                 } else {
                     const queryParams = buildQueryParams(server.name, title, year, imdbId, season, episode);
-                    serverUrl = `https://backend.xprime.tv/${server.name}?${queryParams}&turnstile=${encodeURIComponent(turnstileToken)}`;
+                    serverUrl = `https://backend.xprime.stream/${server.name}?${queryParams}&turnstile=${encodeURIComponent(turnstileToken)}`;
                 }
                 
                 console.log(`[Xprime] Request URL: ${serverUrl}`);
