@@ -120,6 +120,19 @@
       "contentLanguage": ["en"] 
     },
     {
+      "id": "embed69",
+      "name": "Embed69",
+      "description": "Movies & Series",
+      "version": "1.0.0",
+      "author": "KennethJYS",
+      "supportedTypes": ["movie", "tv"],
+      "filename": "providers/embed69.js",
+      "enabled": true,
+      "formats": ["mp4", "m3u8"],
+      "logo": "",
+      "contentLanguage": ["en", "es"]
+    },
+    {
       "id": "hdhub4u",
       "name": "Hdhub4u",
       "description": "Auto-generated description for Hdhub4u",
@@ -235,19 +248,6 @@
       "formats": ["mp4", "m3u8"],
       "logo": "https://i.postimg.cc/2yLnTzPP/kisskh.jpg",
       "contentLanguage": ["ko", "ch", "ja", "th"]
-    },
-    {
-      "id": "onetouchtv",
-      "name": "OneTouchTV",
-      "description": "Asian Drama & Anime streaming",
-      "version": "1.0.0",
-      "author": "",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "providers/onetouchtv.js",
-      "enabled": true,
-      "formats": ["mp4", "m3u8"],
-      "logo": "",
-      "contentLanguage": ["ko"]
     },
     {
       "id": "dramafull",
