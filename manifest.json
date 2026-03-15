@@ -69,9 +69,9 @@
     { 
       "id": "4khdhub",
       "name": "4khdhub",
-      "description": "Auto-generated description for 4khdhub",
+      "description": "4KHDHub direct links",
       "version": "1.0.0",
-      "author": "Michat88",
+      "author": "Nuvio Team",
       "supportedTypes": ["movie", "tv"],
       "filename": "providers/4khdhub.js",
       "enabled": true,
@@ -82,9 +82,9 @@
     {
       "id": "animekai",
       "name": "AnimeKai",
-      "description": "Auto-generated description for AnimeKai",
+      "description": "AnimeKai TV episodes via AnimeKai servers",
       "version": "1.0.0",
-      "author": "Michat88",
+      "author": "Nuvio Team",
       "supportedTypes": ["movie", "tv"],
       "filename": "providers/animekai.js",
       "enabled": true,
@@ -96,9 +96,9 @@
     {
       "id": "castle",
       "name": "Castle",
-      "description": "Auto-generated description for Castle",
+      "description": "Multi Lang provider",
       "version": "1.0.0",
-      "author": "Michat88",
+      "author": "Nuvio Team",
       "supportedTypes": ["movie", "tv"],
       "filename": "providers/castle.js",
       "enabled": true,
@@ -130,7 +130,6 @@
       "enabled": true,
       "formats": ["mp4", "m3u8"],
       "logo": "https://i.postimg.cc/K8nYLrL3/diziyou.png",
-      "icon": "https://i.postimg.cc/K8nYLrL3/diziyou.png",
       "contentLanguage": ["en", "tr"]
     },
     {
@@ -162,7 +161,7 @@
     {
       "id": "hdhub4u",
       "name": "Hdhub4u",
-      "description": "Auto-generated description for Hdhub4u",
+      "description": "Direct links from HDHub4u with high-speed download support",
       "version": "1.0.0",
       "author": "Nuvio Team",
       "supportedTypes": ["movie", "tv"],
@@ -182,7 +181,7 @@
       "filename": "providers/moviesmod.js",
       "enabled": true,
       "formats": ["mp4", "m3u8", "mkv"],
-      "logo": "",
+      "logo": "https://i.postimg.cc/YqWDJtWW/moviesmod.png",
       "contentLanguage": ["en"]
     },
     {
@@ -201,9 +200,9 @@
     {
       "id": "netmirror",
       "name": "Netmirror",
-      "description": "Auto-generated description for Netmirror",
+      "description": "Streaming links from Netmirror (Netflix, Prime, Disney etc).",
       "version": "1.0.0",
-      "author": "Michat88",
+      "author": "Nuvio Team",
       "supportedTypes": ["movie", "tv"],
       "filename": "providers/netmirror.js",
       "enabled": true,
@@ -214,9 +213,9 @@
     {
       "id": "streamflix",
       "name": "Streamflix",
-      "description": "Auto-generated description for Streamflix",
+      "description": "Direct links via StreamFlix API",
       "version": "1.0.0",
-      "author": "Michat88",
+      "author": "Nuvio Team",
       "supportedTypes": ["movie", "tv"],
       "filename": "providers/streamflix.js",
       "enabled": true,
@@ -227,7 +226,7 @@
     {
       "id": "uhdmovies",
       "name": "Uhdmovies",
-      "description": "Auto-generated description for Uhdmovies",
+      "description": "UHD Movies streaming with multiple resolution",
       "version": "1.0.0",
       "author": "Michat88",
       "supportedTypes": ["movie", "tv"],
@@ -240,9 +239,9 @@
     {
       "id": "vidlink",
       "name": "Vidlink",
-      "description": "Auto-generated description for Vidlink",
+      "description": "Vidlink streaming with encrypted TMDB ID support for movies and TV shows",
       "version": "1.0.0",
-      "author": "Michat88",
+      "author": "Nuvio Team",
       "supportedTypes": ["movie", "tv"],
       "filename": "providers/vidlink.js",
       "enabled": true,
@@ -255,7 +254,7 @@
       "name": "Vixsrc",
       "description": "Auto-generated description for Vidlink",
       "version": "1.0.0",
-      "author": "Michat88",
+      "author": "Nuvio Team",
       "supportedTypes": ["movie", "tv"],
       "filename": "providers/vixsrc.js",
       "enabled": true,
