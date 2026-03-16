@@ -1,6 +1,6 @@
 /**
- * Animelok - Final Verified Fix
- * Rebuilt March 2026
+ * Animelok - Dynamic Extraction Fix
+ * Verified 2026 Strategy
  */
 var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
@@ -17,19 +17,17 @@ var USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (
 
 async function search(query) {
   try {
-    // We encode the query to handle spaces/special characters
     const searchUrl = `${BASE_URL}/search?keyword=${encodeURIComponent(query)}`;
     const res = await fetch(searchUrl, { headers: { "User-Agent": USER_AGENT } });
     const html = await res.text();
     const $ = cheerio.load(html);
     const results = [];
 
-    // The selector has been updated for 2026 site layout
     $("a[href*='/anime/']").each((i, el) => {
-      const title = $(el).find("h3, .font-bold").text().trim();
+      const title = $(el).find("h3, .title, .font-bold").first().text().trim();
       const href = $(el).attr("href");
       if (href && title) {
-        const id = href.split("/").pop();
+        const id = href.split("/").pop().split("?")[0];
         results.push({ title, id, type: "tv" });
       }
     });
@@ -40,53 +38,59 @@ async function search(query) {
 async function getStreams(id, type, season, episode) {
   return __async(this, null, function* () {
     let slug = id;
-
-    // 1. If it's a TMDB ID, find the real slug first
     if (/^\d+$/.test(id)) {
       const results = yield search(id);
       if (results.length > 0) slug = results[0].id;
     }
 
-    // 2. The 2026 API route requires fetching the watch page or API/watch endpoint
-    // This is where most scripts fail. We need the "watch" data.
-    const watchUrl = `${BASE_URL}/api/watch/${slug}?ep=${episode}`;
-    
     try {
-      const response = yield fetch(watchUrl, {
+      // STEP 1: Fetch the actual watch page to get the internal Episode ID
+      const watchPageUrl = `${BASE_URL}/watch/${slug}?ep=${episode}`;
+      const pageRes = yield fetch(watchPageUrl, { headers: { "User-Agent": USER_AGENT } });
+      const html = yield pageRes.text();
+      
+      // Look for the episode ID in the HTML (often in a data-id attribute or script)
+      const epIdMatch = html.match(/data-id="(\d+)"/i) || html.match(/"episodeId":"(\d+)"/i);
+      const epId = epIdMatch ? epIdMatch[1] : null;
+
+      // STEP 2: Use the internal ID to call the AJAX source provider
+      // If epId is missing, we fallback to the slug-based API
+      const apiUrl = epId 
+        ? `${BASE_URL}/api/source/${epId}` 
+        : `${BASE_URL}/api/anime/${slug}/episodes/${episode}`;
+
+      const response = yield fetch(apiUrl, {
         headers: {
-          "Referer": `${BASE_URL}/watch/${slug}`,
+          "Referer": watchPageUrl,
           "User-Agent": USER_AGENT,
-          "X-Requested-With": "XMLHttpRequest"
+          "X-Requested-With": "XMLHttpRequest",
+          "Accept": "application/json"
         }
       });
 
       const data = yield response.json();
-      // Animelok's current API returns sources in an array called "servers" or "sources"
-      const servers = data.servers || data.sources || [];
+      const servers = data.servers || data.data?.servers || [];
       const streams = [];
 
       for (const s of servers) {
         let streamUrl = s.url || s.link;
         if (!streamUrl) continue;
 
-        // Apply the fix for the working domain you provided
-        const isAnvod = streamUrl.includes("anvod.pro") || streamUrl.includes("anixl");
-
         streams.push({
-          name: `Animelok - ${s.name || "HD Server"}`,
+          name: `Animelok - ${s.name || "Server"}`,
           url: streamUrl,
-          type: "hls",
+          type: streamUrl.includes(".m3u8") ? "hls" : "mp4",
           quality: "Auto",
           headers: {
             "Referer": BASE_URL,
             "User-Agent": USER_AGENT,
-            "Origin": BASE_URL // Critical for anvod.pro links
+            "Origin": BASE_URL
           }
         });
       }
       return streams;
     } catch (e) {
-      console.error("[Animelok] Failed to fetch streams:", e.message);
+      console.error("[Animelok] Critical Error:", e.message);
       return [];
     }
   });
