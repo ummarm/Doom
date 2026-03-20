@@ -276,13 +276,13 @@
       "contentLanguage": ["en"]
     },
     {
-      "id": "vidnest",
-      "name": "Vidnest",
-      "description": "Vidnest streaming with encrypted TMDB ID support for movies and TV shows",
+      "id": "videasy",
+      "name": "Videasy",
+      "description": "Videasy streaming with encrypted TMDB ID support for movies and TV shows",
       "version": "1.0.0",
       "author": "Nuvio Team",
       "supportedTypes": ["movie", "tv"],
-      "filename": "providers/vidnest.js",
+      "filename": "providers/videasy.js",
       "enabled": true,
       "formats": ["mp4", "m3u8"],
       "logo": "",
