@@ -7,7 +7,7 @@ const TMDB_API_KEY = '439c478a771f35c05022f9feabcca01c';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
 // Vidnest Configuration
-const VIDNEST_BASE_URL = 'https://vidnest.fun';
+const VIDNEST_BASE_URL = 'https://first.vidnest.fun';
 const PASSPHRASE = 'T8c8PQlSQVU4mBuW4CbE/g57VBbM5009QHd+ym93aZZ5pEeVpToY6OdpYPvRMVYp';
 const SERVERS = ['allmovies', 'hollymoviehd'];
 
