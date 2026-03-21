@@ -14,7 +14,7 @@ let SESSION_DATA = {
 const HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Mobile Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-    'Accept-Language': 'en',
+    'Accept-Language': 'pt-BR',
     'Referer': 'https://lospobreflix.site/',
     'Sec-Fetch-Dest': 'iframe',
     'Sec-Fetch-Mode': 'navigate',
@@ -26,7 +26,7 @@ const HEADERS = {
 const API_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Mobile Safari/537.36',
     'Accept': 'application/json, text/plain, */*',
-    'Accept-Language': 'en',
+    'Accept-Language': 'pt-BR',
     'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
     'X-Requested-With': 'XMLHttpRequest',
     'Origin': BASE_URL,
@@ -35,7 +35,7 @@ const API_HEADERS = {
 
 const VIDSRC_HEADERS = {
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-    'Accept-Language': 'en',
+    'Accept-Language': 'pt-BR',
     'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Mobile Safari/537.36',
     'Referer': 'https://warezcdn.site/',
     'Upgrade-Insecure-Requests': '1'
@@ -478,7 +478,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
                 method: 'POST',
                 headers: {
                     'Accept': '*/*',
-                    'Accept-Language': 'en',
+                    'Accept-Language': 'pt-BR',
                     'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
                     'Origin': CDN_BASE,
                     'Referer': `${CDN_BASE}/`,
