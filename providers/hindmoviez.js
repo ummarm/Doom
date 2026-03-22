@@ -1,16 +1,16 @@
 /**
  * ╔══════════════════════════════════════════════════════════════════════════════╗
- * ║                       HindMoviez — Nuvio Stream Plugin                       ║
+ * ║                       HindMoviez — Nuvio Stream Plugin                      ║
  * ╠══════════════════════════════════════════════════════════════════════════════╣
- * ║  Source     › https://hindmovie.ltd                                          ║
- * ║  Author     › Sanchit  |  TG: @S4NCHITT                                      ║
+ * ║  Source     › https://hindmovie.ltd                                         ║
+ * ║  Author     › Sanchit  |  TG: @S4NCHITT                                     ║
  * ║  Project    › Murph's Streams                                                ║
- * ║  Manifest   › https://badboysxs-morpheus.hf.space/manifest.json              ║
+ * ║  Manifest   › https://badboysxs-morpheus.hf.space/manifest.json             ║
  * ╠══════════════════════════════════════════════════════════════════════════════╣
- * ║  Supports   › Movies & Series  (480p / 720p / 1080p / 4K)                    ║
- * ║  Chain      › mvlink.site → hshare.ink → hcloud → Servers                    ║
- * ║  MKV Probe  › HTTP Range sniff → EBML parse → height + audio lang            ║
- * ║  Parallel   › All quality & episode links resolved concurrently              ║
+ * ║  Supports   › Movies & Series  (480p / 720p / 1080p / 4K)                   ║
+ * ║  Chain      › mvlink.site → hshare.ink → hcloud → Servers                   ║
+ * ║  Info       › Quality + Language parsed from page headings                  ║
+ * ║  Parallel   › All links resolved concurrently                                ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 
@@ -25,10 +25,6 @@ const cheerio = require('cheerio-without-node-native');
 const BASE_URL     = 'https://hindmovie.ltd';
 const TMDB_API_KEY = '439c478a771f35c05022f9feabcca01c';
 const PLUGIN_TAG   = '[HindMoviez]';
-
-// How many bytes to pull from the MKV header for probing.
-// 512 KB is enough to cover EBML head + Segment Info + all Tracks in most files.
-const MKV_PROBE_BYTES = 524288;
 
 const DEFAULT_HEADERS = {
   'User-Agent'      : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -77,338 +73,6 @@ function fetchTextWithFinalUrl(url, extraHeaders) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MKV Header Prober
-// Fetches only the first MKV_PROBE_BYTES via HTTP Range request, then parses
-// the raw EBML binary to extract:
-//   • Video pixel height  → mapped to a quality label (480p / 720p / 1080p / 4K)
-//   • Audio track languages (BCP-47 / ISO 639 codes stored in the Tracks element)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * EBML Element IDs we care about (Matroska spec).
- * All values are big-endian hex as they appear in the binary stream.
- */
-var EBML_IDS = {
-  Tracks          : 0x1654AE6B,
-  TrackEntry      : 0xAE,
-  TrackType       : 0x83,   // 1 = video, 2 = audio
-  Language        : 0x22B59C,
-  LanguageBCP47   : 0x22B59D,
-  Video           : 0xE0,
-  PixelHeight     : 0xBA,
-};
-
-/**
- * Read a variable-length EBML integer from a DataView at the given offset.
- * Returns { value, bytesRead } or null on error.
- */
-function readVint(view, offset) {
-  if (offset >= view.byteLength) return null;
-  var firstByte = view.getUint8(offset);
-  if (firstByte === 0) return null;
-
-  // Determine width from leading-zero count
-  var width = 1;
-  var mask = 0x80;
-  while (!(firstByte & mask) && width <= 8) {
-    width++;
-    mask >>= 1;
-  }
-  if (offset + width > view.byteLength) return null;
-
-  // Read the value, stripping the length marker bit
-  var value = firstByte & (mask - 1);
-  for (var i = 1; i < width; i++) {
-    value = (value * 256) + view.getUint8(offset + i);
-  }
-  return { value: value, bytesRead: width };
-}
-
-/**
- * Read an EBML element ID (which is itself a vint but we keep the marker bit).
- * Returns { id, bytesRead } or null.
- */
-function readElementId(view, offset) {
-  if (offset >= view.byteLength) return null;
-  var firstByte = view.getUint8(offset);
-  var width = 1;
-  var mask = 0x80;
-  while (!(firstByte & mask) && width <= 4) {
-    width++;
-    mask >>= 1;
-  }
-  if (offset + width > view.byteLength) return null;
-
-  var id = 0;
-  for (var i = 0; i < width; i++) {
-    id = (id * 256) + view.getUint8(offset + i);
-  }
-  return { id: id, bytesRead: width };
-}
-
-/**
- * Read a UTF-8 string from a DataView slice.
- */
-function readString(view, offset, length) {
-  var bytes = [];
-  for (var i = 0; i < length && offset + i < view.byteLength; i++) {
-    var b = view.getUint8(offset + i);
-    if (b === 0) break; // null-terminated
-    bytes.push(b);
-  }
-  return bytes.map(function (b) { return String.fromCharCode(b); }).join('');
-}
-
-/**
- * Read an unsigned integer from a DataView slice (big-endian).
- */
-function readUint(view, offset, length) {
-  var val = 0;
-  for (var i = 0; i < length && offset + i < view.byteLength; i++) {
-    val = (val * 256) + view.getUint8(offset + i);
-  }
-  return val;
-}
-
-/**
- * Scan an EBML data region and collect all TrackEntry blocks,
- * returning an array of { type, language, pixelHeight } objects.
- *
- * This is a shallow recursive parser — it only descends into elements
- * we care about (Tracks, TrackEntry, Video) to stay fast.
- */
-function parseEbmlTracks(view, start, end) {
-  var tracks = [];
-  var offset = start;
-
-  while (offset < end) {
-    var idResult = readElementId(view, offset);
-    if (!idResult) break;
-    offset += idResult.bytesRead;
-
-    var sizeResult = readVint(view, offset);
-    if (!sizeResult) break;
-    offset += sizeResult.bytesRead;
-
-    var dataOffset = offset;
-    var dataSize   = sizeResult.value;
-
-    // Guard against corrupt/huge sizes
-    if (dataSize > 0x4000000 || dataOffset + dataSize > view.byteLength + 1024) {
-      break;
-    }
-
-    var id = idResult.id;
-
-    if (id === EBML_IDS.Tracks) {
-      // Recurse into Tracks container
-      tracks = tracks.concat(parseEbmlTracks(view, dataOffset, Math.min(dataOffset + dataSize, view.byteLength)));
-
-    } else if (id === EBML_IDS.TrackEntry) {
-      // Parse a single track entry
-      var track = parseTrackEntry(view, dataOffset, Math.min(dataOffset + dataSize, view.byteLength));
-      if (track) tracks.push(track);
-
-    }
-
-    offset = dataOffset + dataSize;
-    if (offset <= dataOffset) break; // prevent infinite loop on zero-size
-  }
-
-  return tracks;
-}
-
-/**
- * Parse a single TrackEntry element, extracting type / language / pixelHeight.
- */
-function parseTrackEntry(view, start, end) {
-  var track = { type: 0, language: null, pixelHeight: 0 };
-  var offset = start;
-
-  while (offset < end) {
-    var idResult = readElementId(view, offset);
-    if (!idResult) break;
-    offset += idResult.bytesRead;
-
-    var sizeResult = readVint(view, offset);
-    if (!sizeResult) break;
-    offset += sizeResult.bytesRead;
-
-    var dataOffset = offset;
-    var dataSize   = sizeResult.value;
-    if (dataSize > 0x1000000) break;
-
-    var id = idResult.id;
-
-    if (id === EBML_IDS.TrackType) {
-      track.type = readUint(view, dataOffset, dataSize);
-
-    } else if (id === EBML_IDS.Language || id === EBML_IDS.LanguageBCP47) {
-      track.language = readString(view, dataOffset, dataSize).trim() || null;
-
-    } else if (id === EBML_IDS.Video) {
-      // Recurse into the Video sub-element to get PixelHeight
-      track.pixelHeight = parseVideoHeight(view, dataOffset, Math.min(dataOffset + dataSize, view.byteLength));
-
-    }
-
-    offset = dataOffset + dataSize;
-    if (offset <= dataOffset) break;
-  }
-
-  return track;
-}
-
-/**
- * Scan a Video element for the PixelHeight field.
- */
-function parseVideoHeight(view, start, end) {
-  var offset = start;
-  while (offset < end) {
-    var idResult = readElementId(view, offset);
-    if (!idResult) break;
-    offset += idResult.bytesRead;
-
-    var sizeResult = readVint(view, offset);
-    if (!sizeResult) break;
-    offset += sizeResult.bytesRead;
-
-    if (idResult.id === EBML_IDS.PixelHeight) {
-      return readUint(view, offset, sizeResult.value);
-    }
-
-    offset += sizeResult.value;
-    if (offset <= 0) break;
-  }
-  return 0;
-}
-
-/**
- * Map a raw pixel height to a clean quality label.
- */
-function heightToQualityLabel(h) {
-  if (h >= 2000) return '4K (2160p)';
-  if (h >= 1060) return '1080p';
-  if (h >= 700)  return '720p';
-  if (h >= 440)  return '480p';
-  if (h > 0)     return h + 'p';
-  return null;
-}
-
-/**
- * Map an ISO 639-2/BCP-47 language code to a human-readable label.
- */
-var LANG_NAMES = {
-  'eng': 'English', 'en': 'English',
-  'hin': 'Hindi',   'hi': 'Hindi',
-  'tam': 'Tamil',   'ta': 'Tamil',
-  'tel': 'Telugu',  'te': 'Telugu',
-  'mal': 'Malayalam','ml': 'Malayalam',
-  'kan': 'Kannada', 'kn': 'Kannada',
-  'ben': 'Bengali',  'bn': 'Bengali',
-  'pun': 'Punjabi',  'pa': 'Punjabi',
-  'mar': 'Marathi',  'mr': 'Marathi',
-  'urd': 'Urdu',     'ur': 'Urdu',
-  'jpn': 'Japanese', 'ja': 'Japanese',
-  'kor': 'Korean',   'ko': 'Korean',
-  'chi': 'Chinese',  'zh': 'Chinese',
-  'zho': 'Chinese',
-  'spa': 'Spanish',  'es': 'Spanish',
-  'fre': 'French',   'fr': 'French',
-  'ger': 'German',   'de': 'German',
-  'ara': 'Arabic',   'ar': 'Arabic',
-  'und': null, // undefined — skip
-};
-
-function langCodeToName(code) {
-  if (!code) return null;
-  var lower = code.toLowerCase().split('-')[0]; // handle BCP-47 like "hi-IN"
-  return LANG_NAMES[lower] || code.toUpperCase();
-}
-
-/**
- * Probe a remote MKV/MP4 file by fetching only the first MKV_PROBE_BYTES bytes
- * via an HTTP Range request, then parsing the EBML binary structure.
- *
- * Returns a Promise resolving to:
- *   { qualityLabel: string|null, audioLanguages: string[] }
- *
- * Silently returns empty info on any failure so streams still appear.
- */
-function probeMkvInfo(url) {
-  console.log(PLUGIN_TAG + ' MKV probe → ' + url);
-
-  return fetch(url, {
-    method  : 'GET',
-    headers : Object.assign({}, DEFAULT_HEADERS, {
-      'Range' : 'bytes=0-' + (MKV_PROBE_BYTES - 1),
-    }),
-    redirect: 'follow',
-  })
-    .then(function (res) {
-      // Accept 206 Partial Content or 200 (server ignoring Range)
-      if (res.status !== 206 && res.status !== 200) {
-        console.log(PLUGIN_TAG + ' MKV probe got HTTP ' + res.status + ' — skipping');
-        return { qualityLabel: null, audioLanguages: [] };
-      }
-      return res.arrayBuffer().then(function (buf) {
-        return parseMkvBuffer(buf);
-      });
-    })
-    .catch(function (err) {
-      console.log(PLUGIN_TAG + ' MKV probe failed: ' + err.message);
-      return { qualityLabel: null, audioLanguages: [] };
-    });
-}
-
-/**
- * Parse an ArrayBuffer (raw MKV/EBML bytes) and return
- * { qualityLabel, audioLanguages }.
- */
-function parseMkvBuffer(buf) {
-  var view = new DataView(buf);
-
-  // Quick sanity check: MKV files start with EBML magic 0x1A 0x45 0xDF 0xA3
-  if (view.byteLength < 4) return { qualityLabel: null, audioLanguages: [] };
-  var magic = view.getUint32(0);
-  if (magic !== 0x1A45DFA3) {
-    console.log(PLUGIN_TAG + ' Not an MKV/EBML file (magic: 0x' + magic.toString(16) + ')');
-    return { qualityLabel: null, audioLanguages: [] };
-  }
-
-  // Parse from byte 0 across the full probe window
-  var tracks = parseEbmlTracks(view, 0, view.byteLength);
-  console.log(PLUGIN_TAG + ' EBML parsed — ' + tracks.length + ' track(s) found');
-
-  // ── Derive quality from video track pixel height ──────────────────────────
-  var qualityLabel = null;
-  var videoTrack = tracks.find(function (t) { return t.type === 1 && t.pixelHeight > 0; });
-  if (videoTrack) {
-    qualityLabel = heightToQualityLabel(videoTrack.pixelHeight);
-    console.log(PLUGIN_TAG + ' Video height: ' + videoTrack.pixelHeight + 'px → ' + qualityLabel);
-  }
-
-  // ── Collect unique audio language names ───────────────────────────────────
-  var seen = {};
-  var audioLanguages = [];
-  tracks
-    .filter(function (t) { return t.type === 2; })
-    .forEach(function (t) {
-      var name = langCodeToName(t.language);
-      if (name && !seen[name]) {
-        seen[name] = true;
-        audioLanguages.push(name);
-      }
-    });
-
-  if (audioLanguages.length) {
-    console.log(PLUGIN_TAG + ' Audio tracks: ' + audioLanguages.join(', '));
-  }
-
-  return { qualityLabel: qualityLabel, audioLanguages: audioLanguages };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // TMDB — Title & Year Lookup
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -444,6 +108,100 @@ function getTmdbDetails(tmdbId, type) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Page Info Extractor
+// Reads quality, language, size and source from the H3 headings on the page.
+//
+// HindMovie uses headings like:
+//   "Peaky Blinders The Immortal Man 2026 Hindi-English 1080P Web-DL [2.3GB]"
+//   "Peaky Blinders The Immortal Man 2026 Hindi-English 480P Web-DL [373MB]"
+//
+// Each H3 heading directly precedes its download button, so we pair them.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Parse a single H3 heading string and extract:
+ *   quality    — "1080p" / "720p" / "480p" / "4K" / "2160p"
+ *   languages  — ["Hindi", "English"] etc.
+ *   size       — "2.3GB" / "373MB" etc.
+ *   source     — "Web-DL" / "BluRay" / "WEB-DL" etc.
+ *   is10bit    — true if "10bit" appears
+ *
+ * Example heading:
+ *   "Peaky Blinders The Immortal Man 2026 Hindi-English 1080P 10bit Web-DL [2.3GB]"
+ */
+function parseHeadingInfo(heading) {
+  var text = heading || '';
+
+  // ── Quality ────────────────────────────────────────────────────────────────
+  var qualityMatch = text.match(/\b(4K|2160[pP]|1080[pP]|720[pP]|480[pP]|360[pP])\b/i);
+  var quality = qualityMatch ? qualityMatch[1].toUpperCase().replace('P', 'p') : null;
+  // Normalise 4K alias
+  if (quality && quality.toLowerCase() === '4k') quality = '2160p';
+
+  // ── 10-bit flag ────────────────────────────────────────────────────────────
+  var is10bit = /\b10\s*[Bb]it\b/.test(text);
+
+  // ── Source (Web-DL, BluRay, WEBRip, HDTV …) ───────────────────────────────
+  var sourceMatch = text.match(/\b(Web[\s-]?DL|WEB[\s-]?DL|WEBRip|BluRay|Blu[\s-]?Ray|BRRip|HDTV|HDCAM|CAM|TS)\b/i);
+  var source = sourceMatch ? sourceMatch[1].replace(/\s/g, '-') : null;
+
+  // ── File size ──────────────────────────────────────────────────────────────
+  var sizeMatch = text.match(/\[([0-9.]+\s*(?:MB|GB|TB|KB))\]/i);
+  var size = sizeMatch ? sizeMatch[1].trim() : null;
+
+  // ── Languages ─────────────────────────────────────────────────────────────
+  // Match "Hindi-English", "Hindi English", "Multi Audio", etc.
+  // Strategy: find a run of known language words separated by - or spaces
+  var KNOWN_LANGS = [
+    'Hindi', 'English', 'Tamil', 'Telugu', 'Malayalam', 'Kannada',
+    'Bengali', 'Punjabi', 'Marathi', 'Urdu', 'Japanese', 'Korean',
+    'Chinese', 'Spanish', 'French', 'German', 'Arabic', 'Russian',
+    'Turkish', 'Portuguese', 'Italian', 'Thai', 'Multi',
+  ];
+
+  var langPattern = new RegExp(
+    '\\b(' + KNOWN_LANGS.join('|') + ')(?:[\\s-]+(' + KNOWN_LANGS.join('|') + '))*\\b',
+    'gi'
+  );
+
+  var languages = [];
+  var seen = {};
+  var langMatch;
+  while ((langMatch = langPattern.exec(text)) !== null) {
+    // Split the full match on hyphens/spaces to get individual langs
+    langMatch[0].split(/[\s-]+/).forEach(function (word) {
+      var cap = word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      if (KNOWN_LANGS.map(function(l){return l.toLowerCase();}).indexOf(cap.toLowerCase()) !== -1 && !seen[cap]) {
+        seen[cap] = true;
+        languages.push(cap);
+      }
+    });
+  }
+
+  return {
+    quality  : quality,
+    is10bit  : is10bit,
+    source   : source,
+    size     : size,
+    languages: languages,
+  };
+}
+
+/**
+ * Build a clean, human-readable label from parsed heading info.
+ * e.g. "1080p · Web-DL · 10bit · Hindi + English · 2.3GB"
+ */
+function buildInfoLabel(info) {
+  var parts = [];
+  if (info.quality)             parts.push(info.quality);
+  if (info.source)              parts.push(info.source);
+  if (info.is10bit)             parts.push('10bit');
+  if (info.languages.length)   parts.push(info.languages.join(' + '));
+  if (info.size)                parts.push(info.size);
+  return parts.join(' · ') || 'Unknown';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Parsers
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -469,33 +227,62 @@ function parseArticles(html) {
 }
 
 /**
- * Extract quality-labelled download buttons (mvlink.site links)
- * from a movie or series detail page.
+ * Extract download buttons (mvlink.site links) paired with their H3 headings.
+ *
+ * HindMovie page structure:
+ *   <h3>... Movie Title 2026 Hindi-English 1080P Web-DL [2.3GB]</h3>
+ *   <p><a href="https://mvlink.site/XXXXX">Download Links</a></p>
+ *
+ * We walk every H3 in the entry-content, then find the next mvlink anchor.
+ * This gives us accurate quality + language metadata per button.
  */
 function parseDownloadButtons(html) {
   var $ = cheerio.load(html);
-  var links = [];
+  var buttons = [];
 
-  $('a[href*="mvlink.site"]').each(function (_i, el) {
-    var href = $(el).attr('href');
-    var text = $(el).text().trim();
-    var ctx  = text;
+  $('.entry-content h3').each(function (_i, h3) {
+    var headingText = $(h3).text().trim();
 
-    // Widen context to parent + previous sibling for quality detection
-    var parent = $(el).parent();
-    if (parent.length) {
-      ctx += ' ' + parent.text();
-      var prev = parent.prev();
-      if (prev.length) ctx += ' ' + prev.text();
+    // Only process headings that contain a download button nearby
+    // Walk forward siblings until we find an mvlink anchor or hit another H3
+    var sibling = $(h3).next();
+    var mvlinkHref = null;
+
+    while (sibling.length && !sibling.is('h3') && !sibling.is('h2')) {
+      var anchor = sibling.find('a[href*="mvlink.site"]').first();
+      if (anchor.length) {
+        mvlinkHref = anchor.attr('href');
+        break;
+      }
+      sibling = sibling.next();
     }
 
-    var match   = ctx.match(/(480p|720p|1080p|2160p|4K)/i);
-    var quality = match ? match[1] : 'Unknown';
+    if (!mvlinkHref) return; // No button found after this heading
 
-    links.push({ quality: quality, link: href, text: text });
+    var info = parseHeadingInfo(headingText);
+    console.log(PLUGIN_TAG + ' Found button: ' + headingText.slice(0, 80));
+
+    buttons.push({
+      heading : headingText,
+      link    : mvlinkHref,
+      info    : info,
+    });
   });
 
-  return links;
+  // Fallback: if no H3-paired buttons found, grab all mvlink anchors with
+  // quality scraped from surrounding context (original behaviour)
+  if (!buttons.length) {
+    $('a[href*="mvlink.site"]').each(function (_i, el) {
+      var href = $(el).attr('href');
+      var ctx  = $(el).closest('p, div').prev('h3').text()
+               + ' ' + $(el).closest('p, div').text();
+
+      var info = parseHeadingInfo(ctx);
+      buttons.push({ heading: ctx.trim(), link: href, info: info });
+    });
+  }
+
+  return buttons;
 }
 
 /**
@@ -593,7 +380,6 @@ function parseServers(html) {
 /**
  * Walk the full 4-step redirect chain and return a map of
  * server names → final download URLs.
- * Returns an empty object if any step in the chain fails.
  */
 function resolveServerChain(mvlinkUrl) {
   return fetchTextWithFinalUrl(mvlinkUrl).then(function (result) {
@@ -644,89 +430,6 @@ function findPageUrl(title) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Utility
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Convert a quality string (e.g. "1080p", "4K") to a pixel-height integer. */
-function qualityToHeight(quality) {
-  if (!quality) return 0;
-  var q = quality.toLowerCase();
-  if (q === '4k' || q === '2160p') return 2160;
-  if (q === '1080p')               return 1080;
-  if (q === '720p')                return 720;
-  if (q === '480p')                return 480;
-  return 0;
-}
-
-/**
- * Check if a URL likely points to an MKV file.
- * We probe MKV files only — MP4/m3u8 use a different container format.
- */
-function isMkvUrl(url) {
-  if (!url) return false;
-  var lower = url.toLowerCase().split('?')[0]; // strip query params
-  return lower.endsWith('.mkv');
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Stream Builder — assembles the final stream object with MKV info baked in
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Build a Nuvio stream object for one server URL.
- * If the URL is an MKV, probes its header to enrich quality + audio labels.
- * Falls back gracefully if probing fails.
- *
- * @param {string} url          - Final download/stream URL
- * @param {string} serverName   - e.g. "Server 1"
- * @param {string} epTitle      - Episode or movie title string
- * @param {string} scraperQuality - Quality hint from the scraper (e.g. "1080p")
- * @returns {Promise<Object>}     Nuvio stream object
- */
-function buildStream(url, serverName, epTitle, scraperQuality) {
-  var scraperHeight = qualityToHeight(scraperQuality);
-
-  // Only probe MKV files — other formats skip straight to building
-  var probePromise = isMkvUrl(url)
-    ? probeMkvInfo(url)
-    : Promise.resolve({ qualityLabel: null, audioLanguages: [] });
-
-  return probePromise.then(function (info) {
-    // ── Quality label ────────────────────────────────────────────────────────
-    // Prefer MKV-probed label (exact), fall back to scraper hint
-    var qualityLabel = info.qualityLabel
-      || (scraperHeight ? scraperHeight + 'p' : scraperQuality || 'Unknown');
-
-    // ── Audio languages ──────────────────────────────────────────────────────
-    var audioStr = info.audioLanguages.length
-      ? info.audioLanguages.join(' + ')
-      : null;
-
-    // ── Stream name shown in Nuvio UI ────────────────────────────────────────
-    var nameParts = ['🎬 HindMoviez', serverName, qualityLabel];
-    if (audioStr) nameParts.push('🔊 ' + audioStr);
-    var streamName = nameParts.join(' | ');
-
-    // ── Title subtitle (shown below stream name) ─────────────────────────────
-    var titleLines = [epTitle];
-    if (qualityLabel) titleLines.push('📺 ' + qualityLabel);
-    if (audioStr)     titleLines.push('🔊 ' + audioStr);
-    titleLines.push('by Sanchit · @S4NCHITT · Murph\'s Streams');
-    var streamTitle = titleLines.join('\n');
-
-    return {
-      name  : streamName,
-      title : streamTitle,
-      url   : url,
-      quality: qualityLabel,
-      behaviorHints: {
-        bingeGroup : 'hindmoviez-' + serverName.replace(/\s+/g, '-').toLowerCase(),
-      },
-    };
-  });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Public API — getStreams
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -760,17 +463,23 @@ function getStreams(tmdbId, type, season, episode) {
       return fetchText(pageUrl).then(function (pageHtml) {
         if (!pageHtml) return [];
 
-        var qualityButtons = parseDownloadButtons(pageHtml);
-        if (!qualityButtons.length) {
+        // ── Parse download buttons WITH quality/language from page headings ──
+        var buttons = parseDownloadButtons(pageHtml);
+        if (!buttons.length) {
           console.log(PLUGIN_TAG + ' No download buttons on page.');
           return [];
         }
-        console.log(PLUGIN_TAG + ' ' + qualityButtons.length + ' quality option(s) found.');
+        console.log(PLUGIN_TAG + ' ' + buttons.length + ' download button(s) found.');
 
         // ── Fetch all mvlink pages in parallel ──────────────────────────────
-        var mvPromises = qualityButtons.map(function (qb) {
-          return fetchTextWithFinalUrl(qb.link).then(function (result) {
-            return { html: result.html, finalUrl: result.finalUrl, quality: qb.quality };
+        var mvPromises = buttons.map(function (btn) {
+          return fetchTextWithFinalUrl(btn.link).then(function (result) {
+            return {
+              html     : result.html,
+              finalUrl : result.finalUrl,
+              info     : btn.info,
+              heading  : btn.heading,
+            };
           });
         });
 
@@ -788,7 +497,7 @@ function getStreams(tmdbId, type, season, episode) {
                 var epStr = 'Episode ' + String(episode).padStart(2, '0');
                 if (ep.title.indexOf(epStr) === -1) return;
               }
-              toResolve.push({ ep: ep, quality: mv.quality });
+              toResolve.push({ ep: ep, info: mv.info, heading: mv.heading });
             });
           });
 
@@ -801,30 +510,47 @@ function getStreams(tmdbId, type, season, episode) {
           // ── Resolve all server chains in parallel ──────────────────────────
           var resolvePromises = toResolve.map(function (item) {
             return resolveServerChain(item.ep.link).then(function (servers) {
-              return { ep: item.ep, quality: item.quality, servers: servers };
+              return { ep: item.ep, info: item.info, heading: item.heading, servers: servers };
             });
           });
 
           return Promise.all(resolvePromises).then(function (resolved) {
-
-            // ── Build stream objects (with MKV probing) in parallel ──────────
-            var streamPromises = [];
+            var streams = [];
 
             resolved.forEach(function (res) {
+              var info      = res.info;
+              var infoLabel = buildInfoLabel(info);
+
               Object.keys(res.servers).forEach(function (serverName) {
                 var url = res.servers[serverName];
                 if (!url) return;
 
-                streamPromises.push(
-                  buildStream(url, serverName, res.ep.title, res.quality)
-                );
+                // ── Stream name (shown in picker) ────────────────────────────
+                // e.g. "🎬 HindMoviez | Server 1 | 1080p · Web-DL · Hindi + English · 2.3GB"
+                var streamName = '🎬 HindMoviez | ' + serverName + ' | ' + infoLabel;
+
+                // ── Stream title (subtitle lines below name) ──────────────────
+                var titleLines = [];
+                if (info.quality)            titleLines.push('📺 ' + info.quality + (info.is10bit ? ' 10bit' : ''));
+                if (info.source)             titleLines.push('🎞 ' + info.source);
+                if (info.languages.length)   titleLines.push('🔊 ' + info.languages.join(' + '));
+                if (info.size)               titleLines.push('💾 ' + info.size);
+                titleLines.push('by Sanchit · @S4NCHITT · Murph\'s Streams');
+
+                streams.push({
+                  name  : streamName,
+                  title : titleLines.join('\n'),
+                  url   : url,
+                  quality: info.quality || undefined,
+                  behaviorHints: {
+                    bingeGroup : 'hindmoviez-' + serverName.replace(/\s+/g, '-').toLowerCase(),
+                  },
+                });
               });
             });
 
-            return Promise.all(streamPromises).then(function (streams) {
-              console.log(PLUGIN_TAG + ' Done — ' + streams.length + ' stream(s) ready.');
-              return streams;
-            });
+            console.log(PLUGIN_TAG + ' Done — ' + streams.length + ' stream(s) ready.');
+            return streams;
           });
         });
       });
