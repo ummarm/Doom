@@ -103,7 +103,7 @@
       "filename": "providers/brazucaplay.js",
       "enabled": true,
       "formats": ["mp4", "mkv", "m3u8"],
-      "logo": "",
+      "logo": "https://i.postimg.cc/9F6zdnyb/brazucaplay.png",
       "contentLanguage": ["en", "pt"]
     },
     {
