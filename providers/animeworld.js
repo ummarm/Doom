@@ -36,14 +36,6 @@ function cleanTitle(title) {
     .trim()
 }
 
-function titleDistance(a, b) {
-  a = cleanTitle(a)
-  b = cleanTitle(b)
-  if (a === b) return 0
-  if (a.includes(b) || b.includes(a)) return 1
-  return 99
-}
-
 function searchSite(title, mediaType, year) {
   var url = BASE + '/?s=' + encodeURIComponent(title)
   return httpGet(url, { 'Referer': BASE + '/' })
@@ -52,7 +44,6 @@ function searchSite(title, mediaType, year) {
       var containerMatch = html.match(/id="movies-a"([\s\S]*?)(?=<footer|id="footer|class="footer)/m)
       var searchHtml = containerMatch ? containerMatch[1] : html
 
-      // Extract articles with title, url, type and year
       var articleRegex = /<article[^>]*>([\s\S]*?)<\/article>/g
       var articleMatch
       while ((articleMatch = articleRegex.exec(searchHtml)) !== null) {
@@ -66,26 +57,19 @@ function searchSite(title, mediaType, year) {
           var type = linkMatch[2]
           var itemTitle = titleMatch[1].trim()
           var itemYear = yearMatch ? parseInt(yearMatch[1]) : null
-
           var exists = false
           for (var i = 0; i < results.length; i++) {
             if (results[i].slug === slug) { exists = true; break }
           }
           if (!exists && slug && slug !== 'page') {
-            results.push({
-              url: linkMatch[1],
-              type: type,
-              slug: slug,
-              title: itemTitle,
-              year: itemYear
-            })
+            results.push({ url: linkMatch[1], type: type, slug: slug, title: itemTitle, year: itemYear })
           }
         }
       }
 
-      console.log('[ZoroLost] Raw results: ' + results.length + ' for: ' + title + ' (' + year + ')')
+      console.log('[ZoroLost] Raw: ' + results.length + ' for: ' + title + ' (' + year + ')')
 
-      // Filter by type first
+      // Filter by type
       var filtered = results
       if (mediaType === 'movie') {
         var movies = results.filter(function(r) { return r.type === 'movies' })
@@ -95,24 +79,44 @@ function searchSite(title, mediaType, year) {
         if (series.length > 0) filtered = series
       }
 
-      // Sort by best match — year + title distance
-      filtered.sort(function(a, b) {
-        var distA = titleDistance(title, a.title)
-        var distB = titleDistance(title, b.title)
-
-        // Year match bonus
-        var yearMatchA = year && a.year && Math.abs(a.year - year) <= 1 ? 0 : 10
-        var yearMatchB = year && b.year && Math.abs(b.year - year) <= 1 ? 0 : 10
-
-        return (distA + yearMatchA) - (distB + yearMatchB)
-      })
-
-      // Log top result
-      if (filtered.length > 0) {
-        console.log('[ZoroLost] Best match: ' + filtered[0].title + ' (' + filtered[0].year + ') dist=' + titleDistance(title, filtered[0].title))
+      // Step 1: Separate year matched vs no year
+      var withYear = []
+      var withoutYear = []
+      if (year) {
+        withYear = filtered.filter(function(r) {
+          return r.year && Math.abs(r.year - year) <= 1
+        })
+        withoutYear = filtered.filter(function(r) { return !r.year })
       }
 
-      return filtered
+      var candidates = withYear.length > 0 ? withYear : (year ? withoutYear : filtered)
+      if (candidates.length === 0) candidates = filtered
+
+      // Step 2: Sort by title closeness
+      var cleanSearch = cleanTitle(title)
+      candidates.sort(function(a, b) {
+        var cleanA = cleanTitle(a.title)
+        var cleanB = cleanTitle(b.title)
+
+        // Exact match wins
+        var exactA = cleanA === cleanSearch ? 0 : 1
+        var exactB = cleanB === cleanSearch ? 0 : 1
+        if (exactA !== exactB) return exactA - exactB
+
+        // Starts with search title
+        var startsA = cleanA.indexOf(cleanSearch) === 0 ? 0 : 1
+        var startsB = cleanB.indexOf(cleanSearch) === 0 ? 0 : 1
+        if (startsA !== startsB) return startsA - startsB
+
+        // Shorter title closer to original
+        return cleanA.length - cleanB.length
+      })
+
+      if (candidates.length > 0) {
+        console.log('[ZoroLost] Best: ' + candidates[0].title + ' (' + candidates[0].year + ')')
+      }
+
+      return candidates
     })
 }
 
