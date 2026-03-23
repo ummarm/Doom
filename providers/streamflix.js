@@ -29,27 +29,7 @@ var SF_UA         = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.3
 var TAG           = '[StreamFlix]';
 var TTL           = 30 * 60 * 1000;
 
-// ── Cloudflare Worker proxy ────────────────────────────────────────────────────
-// All stream URLs are routed through this worker for:
-//   • Range / seek support (206 Partial Content)
-//   • Edge caching (Cloudflare CDN nearest to viewer)
-//   • M3U8 segment rewriting for HLS
-//   • Smooth low-bandwidth playback
-var WORKER_BASE   = 'https://hindmoviez.s4nch1tt.workers.dev'; // unified HM + SF worker
 
-/**
- * Wrap a stream URL through the Cloudflare Worker proxy.
- * Detects HLS (.m3u8) and routes through /m3u8 for segment rewriting,
- * everything else through /proxy for Range + cache support.
- */
-function proxyUrl(rawUrl) {
-  if (!rawUrl) return rawUrl;
-  var lower = rawUrl.toLowerCase().split('?')[0];
-  var isM3U8 = lower.endsWith('.m3u8') || lower.endsWith('.m3u');
-  // Use /sf/* routes on the unified worker
-  var endpoint = isM3U8 ? '/sf/m3u8' : '/sf/proxy';
-  return WORKER_BASE + endpoint + '?url=' + encodeURIComponent(rawUrl);
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // State — identical to v3.1
@@ -649,17 +629,20 @@ function makeStream(url, quality, titleLine, langs, info) {
 
   lines.push("by Sanchit · @S4NCHITT · Murph's Streams");
 
-  // Route through Cloudflare Worker for seek + edge cache + low-bandwidth
-  var proxiedUrl = proxyUrl(url);
-
   return {
     name    : streamName,
     title   : lines.join('\n'),
-    url     : proxiedUrl,
+    url     : url,
     quality : quality,
+    // StreamFlix CDN serves directly — Referer header needed for auth
     behaviorHints: {
       notWebReady: false,
-      bingeGroup : 'streamflix',
+      bingeGroup  : 'streamflix',
+      headers     : {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer'   : 'https://api.streamflix.app/',
+        'Origin'    : 'https://api.streamflix.app',
+      },
     },
   };
 }
