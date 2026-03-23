@@ -245,6 +245,9 @@ function sim(a, b) {
   return ratio;
 }
 
+/**
+ * Find the single best match (used as the reference item for info extraction).
+ */
 function findContent(title) {
   return getData().then(function (items) {
     if (!items.length) throw new Error('No items in data.json');
@@ -263,6 +266,92 @@ function findContent(title) {
     }
     return best;
   });
+}
+
+/**
+ * Find ALL items that match the title well enough — each is a different
+ * language/audio version. Returns array of { item, langLabel, score }.
+ *
+ * StreamFlix stores separate data.json entries per language version:
+ *   "Pushpa 2 [Hindi]"  → Hindi dub
+ *   "Pushpa 2 [Tamil]"  → Tamil original
+ *   "Pushpa 2 [Telugu]" → Telugu original
+ *   "Pushpa 2"          → default (usually Hindi)
+ *
+ * We collect every item whose sim() >= MATCH_THRESHOLD (0.6) and whose
+ * normalised title isn't too short (same guard as findContent).
+ */
+function findAllContent(title) {
+  return getData().then(function (items) {
+    if (!items.length) throw new Error('No items in data.json');
+
+    var THRESHOLD  = 0.6;
+    var normTitle  = norm(title);
+    var candidates = [];
+    var bestScore  = 0;
+
+    for (var i = 0; i < items.length; i++) {
+      var t = getTitle(items[i]);
+      if (!t) continue;
+      var s = sim(title, t);
+      if (s < THRESHOLD) continue;
+      if (norm(t).length < normTitle.length * 0.35 && normTitle.length > 6) continue;
+      if (s > bestScore) bestScore = s;
+      candidates.push({ item: items[i], rawTitle: t, score: s });
+    }
+
+    if (!candidates.length) {
+      console.log(TAG + ' No matches for "' + title + '"');
+      return [];
+    }
+
+    // Accept items within 0.15 of the best score so we don't grab unrelated titles
+    var scoreFloor = Math.max(THRESHOLD, bestScore - 0.15);
+    candidates = candidates.filter(function (c) { return c.score >= scoreFloor; });
+
+    // Derive language label for each candidate from its title
+    candidates.forEach(function (c) {
+      c.langLabel = getLangFromItemTitle(c.rawTitle);
+    });
+
+    // De-duplicate by (link/key + language) so the same file isn't returned twice
+    var seenKeys = {};
+    candidates = candidates.filter(function (c) {
+      var dedupeKey = (getLink(c.item) || getKey(c.item) || c.rawTitle) + '|' + c.langLabel;
+      if (seenKeys[dedupeKey]) return false;
+      seenKeys[dedupeKey] = true;
+      return true;
+    });
+
+    console.log(TAG + ' Found ' + candidates.length + ' language variant(s) for "' + title + '": '
+      + candidates.map(function (c) { return '"' + c.rawTitle + '" [' + c.langLabel + ']'; }).join(', '));
+
+    return candidates;
+  });
+}
+
+/**
+ * Detect language from the item's own title string.
+ * Covers bracket/paren tags AND trailing keywords.
+ */
+function getLangFromItemTitle(t) {
+  var lower = (t || '').toLowerCase();
+  if (/\[hindi\]|\(hindi\)|hindi/.test(lower))    return 'Hindi';
+  if (/\[tamil\]|\(tamil\)|tamil/.test(lower))    return 'Tamil';
+  if (/\[telugu\]|\(telugu\)|telugu/.test(lower)) return 'Telugu';
+  if (/\[kannada\]|\(kannada\)|kannada/.test(lower)) return 'Kannada';
+  if (/\[malayalam\]|\(malayalam\)|malay/.test(lower)) return 'Malayalam';
+  if (/\[bengali\]|\(bengali\)|bengali/.test(lower)) return 'Bengali';
+  if (/\[punjabi\]|\(punjabi\)|punjabi/.test(lower)) return 'Punjabi';
+  if (/\[english\]|\(english\)|english/.test(lower)) return 'English';
+  if (/\[korean\]|\(korean\)|korean/.test(lower))  return 'Korean';
+  if (/\[japanese\]|\(japanese\)|japanese/.test(lower)) return 'Japanese';
+  if (/\[chinese\]|\(chinese\)|chinese/.test(lower)) return 'Chinese';
+  if (/\[spanish\]|\(spanish\)|spanish/.test(lower)) return 'Spanish';
+  if (/\[french\]|\(french\)|french/.test(lower))  return 'French';
+  if (/\[arabic\]|\(arabic\)|arabic/.test(lower))  return 'Arabic';
+  // Check movielanguage / language field on the item itself (fallback)
+  return 'Hindi'; // StreamFlix default
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -485,7 +574,7 @@ function makeStream(url, quality, titleLine, langLabel, info) {
 // Movie handler — identical logic to v3.1, enriched Nuvio output
 // ─────────────────────────────────────────────────────────────────────────────
 
-function doMovie(item, config, tmdbTitle) {
+function doMovie(item, config, tmdbTitle, langOverride) {
   var link = getLink(item), name = getTitle(item);
   console.log(TAG + ' Movie: "' + name + '" link="' + link + '"');
   if (!link) return Promise.resolve([]);
@@ -493,7 +582,7 @@ function doMovie(item, config, tmdbTitle) {
   var cdnTiers = tiers(config);
   if (!Object.keys(cdnTiers).length) return Promise.resolve([]);
 
-  var langLabel = 'Hindi'; // audio detection disabled for speed — same as v3.1
+  var langLabel = langOverride || getLangFromItemTitle(getTitle(item));
 
   // ── Extract info from data.json item fields ────────────────────────────────
   var genre    = item.moviegenre    || item.genre        || item.Genre       || null;
@@ -528,7 +617,7 @@ function doMovie(item, config, tmdbTitle) {
 // TV handler — identical logic to v3.1, Nuvio output
 // ─────────────────────────────────────────────────────────────────────────────
 
-function doTV(item, config, s, e, tmdbTitle) {
+function doTV(item, config, s, e, tmdbTitle, langOverride) {
   var key  = getKey(item), name = getTitle(item);
   console.log(TAG + ' TV: "' + name + '" key="' + key + '" S' + s + 'E' + e);
 
@@ -557,7 +646,7 @@ function doTV(item, config, s, e, tmdbTitle) {
   var seasonMatch  = String(durationStr).match(/(\d+)\s*[Ss]eason/);
   var totalSeasons = seasonMatch ? parseInt(seasonMatch[1]) : s;
 
-  var langLabel = 'Hindi';
+  var langLabel = langOverride || getLangFromItemTitle(getTitle(item));
 
   // Step 1: try single-season WS, fall back to multi-season
   var epLinkPromise;
@@ -681,13 +770,51 @@ function getStreams(tmdbId, mediaType, sNum, eNum) {
       if (!title) throw new Error('No TMDB title');
       console.log(TAG + ' "' + title + '"');
 
-      return findContent(title).then(function (match) {
-        if (!match) return [];
-        var streamPromise = isTv
-          ? doTV(match, config, parseInt(sNum), parseInt(eNum), title)
-          : doMovie(match, config, title);
+      // findAllContent returns every language variant (Hindi, Tamil, Telugu, etc.)
+      return findAllContent(title).then(function (candidates) {
+        if (!candidates.length) return [];
 
-        return streamPromise.then(function (streams) {
+        console.log(TAG + ' Processing ' + candidates.length + ' language variant(s) in parallel');
+
+        // Run doMovie / doTV for every variant simultaneously
+        var variantPromises = candidates.map(function (c) {
+          var p = isTv
+            ? doTV(c.item, config, parseInt(sNum), parseInt(eNum), title, c.langLabel)
+            : doMovie(c.item, config, title, c.langLabel);
+          return p.catch(function (err) {
+            console.log(TAG + ' Variant "' + c.rawTitle + '" failed: ' + err.message);
+            return [];
+          });
+        });
+
+        return Promise.all(variantPromises).then(function (allStreams) {
+          // Flatten + deduplicate by URL
+          var seen = {}, streams = [];
+          for (var i = 0; i < allStreams.length; i++) {
+            for (var j = 0; j < allStreams[i].length; j++) {
+              var s = allStreams[i][j];
+              if (!s || !s.url || seen[s.url]) continue;
+              seen[s.url] = true;
+              streams.push(s);
+            }
+          }
+
+          // Sort: Hindi > Tamil > Telugu > Kannada > Malayalam > English, then quality desc
+          var LANG_ORDER = { Hindi:0, Tamil:1, Telugu:2, Kannada:3, Malayalam:4, Bengali:5, Punjabi:6, English:7 };
+          streams.sort(function (a, b) {
+            var la = (a.name || '').match(/\| ([^|]+)$/);
+            var lb = (b.name || '').match(/\| ([^|]+)$/);
+            var langA = la ? la[1].trim() : 'Z';
+            var langB = lb ? lb[1].trim() : 'Z';
+            var lo = (LANG_ORDER[langA] !== undefined ? LANG_ORDER[langA] : 99)
+                   - (LANG_ORDER[langB] !== undefined ? LANG_ORDER[langB] : 99);
+            if (lo !== 0) return lo;
+            var qa = parseInt((a.quality || '0').match(/\d+/)[0]);
+            var qb = parseInt((b.quality || '0').match(/\d+/)[0]);
+            return qb - qa;
+          });
+
+          console.log(TAG + ' Total: ' + streams.length + ' stream(s) across all languages');
           if (streams.length) _streamCache.set(cacheKey, streams);
           return streams;
         });
