@@ -207,7 +207,7 @@
       "filename": "providers/cinemacity.js",
       "enabled": true,
       "formats": ["mp4", "m3u8"],
-      "logo": "",
+      "logo": "https://i.postimg.cc/XYjKhS3b/cinemacity.png",
       "contentLanguage": ["en", "hi", "ar"]
     },
     {
