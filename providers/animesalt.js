@@ -36,14 +36,6 @@ function cleanTitle(title) {
     .trim()
 }
 
-function titleDistance(a, b) {
-  a = cleanTitle(a)
-  b = cleanTitle(b)
-  if (a === b) return 0
-  if (a.includes(b) || b.includes(a)) return 1
-  return 99
-}
-
 function searchSite(title, mediaType, year) {
   var url = BASE + '/?s=' + encodeURIComponent(title)
   return httpGet(url, { 'Referer': BASE + '/' })
@@ -65,24 +57,17 @@ function searchSite(title, mediaType, year) {
           var type = linkMatch[2]
           var itemTitle = titleMatch[1].trim()
           var itemYear = yearMatch ? parseInt(yearMatch[1]) : null
-
           var exists = false
           for (var i = 0; i < results.length; i++) {
             if (results[i].slug === slug) { exists = true; break }
           }
           if (!exists && slug && slug !== 'page') {
-            results.push({
-              url: linkMatch[1],
-              type: type,
-              slug: slug,
-              title: itemTitle,
-              year: itemYear
-            })
+            results.push({ url: linkMatch[1], type: type, slug: slug, title: itemTitle, year: itemYear })
           }
         }
       }
 
-      console.log('[AnimeSalt] Raw results: ' + results.length + ' for: ' + title + ' (' + year + ')')
+      console.log('[AnimeSalt] Raw: ' + results.length + ' for: ' + title + ' (' + year + ')')
 
       var filtered = results
       if (mediaType === 'movie') {
@@ -93,19 +78,39 @@ function searchSite(title, mediaType, year) {
         if (series.length > 0) filtered = series
       }
 
-      filtered.sort(function(a, b) {
-        var distA = titleDistance(title, a.title)
-        var distB = titleDistance(title, b.title)
-        var yearMatchA = year && a.year && Math.abs(a.year - year) <= 1 ? 0 : 10
-        var yearMatchB = year && b.year && Math.abs(b.year - year) <= 1 ? 0 : 10
-        return (distA + yearMatchA) - (distB + yearMatchB)
-      })
-
-      if (filtered.length > 0) {
-        console.log('[AnimeSalt] Best match: ' + filtered[0].title + ' (' + filtered[0].year + ')')
+      var withYear = []
+      var withoutYear = []
+      if (year) {
+        withYear = filtered.filter(function(r) {
+          return r.year && Math.abs(r.year - year) <= 1
+        })
+        withoutYear = filtered.filter(function(r) { return !r.year })
       }
 
-      return filtered
+      var candidates = withYear.length > 0 ? withYear : (year ? withoutYear : filtered)
+      if (candidates.length === 0) candidates = filtered
+
+      var cleanSearch = cleanTitle(title)
+      candidates.sort(function(a, b) {
+        var cleanA = cleanTitle(a.title)
+        var cleanB = cleanTitle(b.title)
+
+        var exactA = cleanA === cleanSearch ? 0 : 1
+        var exactB = cleanB === cleanSearch ? 0 : 1
+        if (exactA !== exactB) return exactA - exactB
+
+        var startsA = cleanA.indexOf(cleanSearch) === 0 ? 0 : 1
+        var startsB = cleanB.indexOf(cleanSearch) === 0 ? 0 : 1
+        if (startsA !== startsB) return startsA - startsB
+
+        return cleanA.length - cleanB.length
+      })
+
+      if (candidates.length > 0) {
+        console.log('[AnimeSalt] Best: ' + candidates[0].title + ' (' + candidates[0].year + ')')
+      }
+
+      return candidates
     })
 }
 
