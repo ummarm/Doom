@@ -133,13 +133,13 @@
       "contentLanguage": ["hi", "en", "ja"]
     },
     {
-      "id": "zorolost",
-      "name": "🗡️ ZoroLost",
+      "id": "animeworld",
+      "name": "🗡️ AnimeWorld",
       "description": "WatchAnimeWorld India",
       "version": "1.0.0",
       "author": "Kabir",
       "supportedTypes": ["movie", "tv"],
-      "filename": "providers/zorolost.js",
+      "filename": "providers/animeworld.js",
       "enabled": true,
       "formats": ["m3u8"],
       "logo": "https://watchanimeworld.net/wp-content/uploads/AWI-SiteTitle-1-1536x461.png",
