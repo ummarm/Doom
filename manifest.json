@@ -14,19 +14,7 @@
       "formats": ["mp4", "mkv", "m3u8"],
       "logo": "https://i.postimg.cc/bwDbhq9q/moviesdrive.png",
       "contentLanguage": ["en", "hi"]
-    },
-    {
-      "id": "xdmovies",
-      "name": "XDMovies",
-      "description": "XDMovies - Premium streaming with multiple quality options and servers",
-      "version": "2.0.0",
-      "author": "JK",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "src/providers/xdmovies.js",
-      "enabled": true,
-      "formats": ["mp4", "mkv", "m3u8"],
-      "logo": "https://xdmovies.site/favicon.ico",
-      "contentLanguage": ["en", "hi"]
+    
     },
     {
       "id": "hianime",
@@ -261,6 +249,19 @@
       "formats": ["mp4", "m3u8"],
       "logo": "https://i.postimg.cc/SK9YMsHG/embed69.png",
       "contentLanguage": ["en", "es"]
+    },
+    {
+      "id": "guardahd",
+      "name": "GuardaHD",
+      "description": "Movies & Series in English & Italian",
+      "version": "1.1.5",
+      "author": "realbestia1",
+      "supportedTypes": ["movie", "tv"],
+      "filename": "providers/guardahd.js",
+      "enabled": true,
+      "formats": ["mp4", "m3u8"],
+      "logo": "",
+      "contentLanguage": ["en", "it"]
     },
     {
       "id": "hdhub4u",
