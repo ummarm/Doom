@@ -14,7 +14,6 @@
       "formats": ["mp4", "mkv", "m3u8"],
       "logo": "https://i.postimg.cc/bwDbhq9q/moviesdrive.png",
       "contentLanguage": ["en", "hi"]
-    
     },
     {
       "id": "hianime",
@@ -366,19 +365,6 @@
       "formats": ["mp4", "m3u8"],
       "logo": "",
       "contentLanguage": ["en"]
-    },
-    {
-      "id": "test2",
-      "name": "Test2",
-      "description": "Direct links via StreamFlix API",
-      "version": "1.0.0",
-      "author": "Nuvio Team",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "providers/test2.js",
-      "enabled": true,
-      "formats": ["mp4", "m3u8"],
-      "logo": "",
-      "contentLanguage": ["en"] 
     },
     {
       "id": "uhdmovies",
