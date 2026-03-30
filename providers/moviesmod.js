@@ -43,7 +43,7 @@ function escapeRegExp(string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 const TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
-const FALLBACK_DOMAIN = "https://moviesmod.pink";
+const FALLBACK_DOMAIN = "https://moviesmod.blue";
 const DOMAIN_CACHE_TTL = 4 * 60 * 60 * 1e3;
 let moviesModDomain = FALLBACK_DOMAIN;
 let domainCacheTimestamp = 0;
