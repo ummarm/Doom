@@ -3,7 +3,7 @@
 
 var TMDB_KEY = 'd80ba92bc7cefe3359668d30d06f3305'
 var BASE = 'https://9animetv.im/'
-var CDN = 'https://rapid-cloud.co'
+var CDN = 'https://vod.netmagcdn.com'
 var UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36'
 
 function httpGet(url, headers) {
