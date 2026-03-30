@@ -28,18 +28,6 @@
       "logo": "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/Icons/hianime.png",
       "contentLanguage": ["en", "hi"]
     },
-    {
-      "id": "flixindia",
-      "name": "FlixIndia",
-      "description": "Streaming provider for FlixIndia",
-      "version": "1.0.0",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "providers/flixindia.js",
-      "enabled": true,
-      "formats": ["mkv"],
-      "logo": "https://m.flixindia.xyz/onepieceskull.png",
-      "contentLanguage": ["en", "hi"]
-    },
     { 
       "id": "4khdhub",
       "name": "4khdhub",
@@ -65,45 +53,6 @@
       "formats": ["mp4", "m3u8"],
       "logo": "https://i.postimg.cc/DZpW6Xfb/4khdhub.png",
       "contentLanguage": ["en"]
-    },
-    {
-      "id": "hindmoviez",
-      "name": "HindMoviez",
-      "description": "HindMoviez - Hindi & English Movies and Series (480p / 720p / 1080p / 4K)",
-      "version": "1.0.0",
-      "author": "Sanchit (@S4NCHITT) — Murph's Streams",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "providers/hindmoviez.js",
-      "enabled": true,
-      "formats": ["mp4", "mkv", "m3u8"],
-      "logo": "https://i.postimg.cc/5t55Csm4/hindmoviez.png",
-      "contentLanguage": ["en", "hi"]
-    },
-    {
-      "id": "hdmovie2",
-      "name": "🎬 HDMovie2",
-      "description": "Bollywood & Hindi Dubbed Movies",
-      "version": "1.0.0",
-      "author": "Kabir",
-      "supportedTypes": ["movie"],
-      "filename": "providers/hdmovie2.js",
-      "enabled": true,
-      "formats": ["m3u8"],
-      "logo": "https://i.postimg.cc/bJnfnzHS/hdmovie2.png",
-      "contentLanguage": ["hi", "en"]
-    },
-    {
-      "id": "moviebox",
-      "name": "MovieBox",
-      "description": "MovieBox - Hindi, Tamil, Telugu & English Movies and Series with multi-quality streams",
-      "version": "1.0.0",
-      "author": "Sanchit (@S4NCHITT) — Murph's Streams",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "providers/moviebox.js",
-      "enabled": true,
-      "formats": ["mp4", "m3u8"],
-      "logo": "https://github.com/NivinCNC/CNCVerse-Cloud-Stream-Extension/raw/refs/heads/master/MovieBoxProvider/icon.png",
-      "contentLanguage": ["en", "hi", "ta", "te"]
     },
     {
       "id": "animekai",
@@ -144,6 +93,19 @@
       "formats": ["m3u8"],
       "logo": "https://i.postimg.cc/wxD6rVKX/animeworld.png",
       "contentLanguage": ["hi", "en", "ja"]
+    },
+    {
+      "id": "allmovieland",
+      "name": "AllmovieLand",
+      "description": "AllMovieLand streaming provider with multi-language support",
+      "version": "1.0.0",
+      "author": "Nuvio Team",
+      "supportedTypes": ["movie", "tv"],
+      "filename": "providers/allmovieland.js",
+      "enabled": true,
+      "formats": ["m3u8],
+      "logo": "",
+      "contentLanguage": ["en", "hi", "ta", "te"]  
     },
     { 
       "id": "brazucaplay",
@@ -237,6 +199,18 @@
       "contentLanguage": ["en", "es"]
     },
     {
+      "id": "flixindia",
+      "name": "FlixIndia",
+      "description": "Streaming provider for FlixIndia",
+      "version": "1.0.0",
+      "supportedTypes": ["movie", "tv"],
+      "filename": "providers/flixindia.js",
+      "enabled": true,
+      "formats": ["mkv"],
+      "logo": "https://m.flixindia.xyz/onepieceskull.png",
+      "contentLanguage": ["en", "hi"]
+    },
+    {
       "id": "hdhub4u",
       "name": "HDHub4u",
       "description": "Direct links from HDHub4u with high-speed download support",
@@ -248,6 +222,32 @@
       "formats": ["mp4", "m3u8"],
       "logo": "https://i.postimg.cc/mryRTf0R/hdhub4u.png",
       "contentLanguage": ["en"]
+    },
+    {
+      "id": "hindmoviez",
+      "name": "HindMoviez",
+      "description": "HindMoviez - Hindi & English Movies and Series (480p / 720p / 1080p / 4K)",
+      "version": "1.0.0",
+      "author": "Sanchit (@S4NCHITT) — Murph's Streams",
+      "supportedTypes": ["movie", "tv"],
+      "filename": "providers/hindmoviez.js",
+      "enabled": true,
+      "formats": ["mp4", "mkv", "m3u8"],
+      "logo": "https://i.postimg.cc/5t55Csm4/hindmoviez.png",
+      "contentLanguage": ["en", "hi"]
+    },
+    {
+      "id": "hdmovie2",
+      "name": "🎬 HDMovie2",
+      "description": "Bollywood & Hindi Dubbed Movies",
+      "version": "1.0.0",
+      "author": "Kabir",
+      "supportedTypes": ["movie"],
+      "filename": "providers/hdmovie2.js",
+      "enabled": true,
+      "formats": ["m3u8"],
+      "logo": "https://i.postimg.cc/bJnfnzHS/hdmovie2.png",
+      "contentLanguage": ["hi", "en"]
     },   
     {
       "id": "lamovie",
@@ -260,7 +260,20 @@
       "enabled": true,
       "formats": ["mp4", "m3u8"],
       "logo": "https://i.postimg.cc/SsgH2gcK/lamovie.png",
-      "contentLanguage": ["en", "es"]  
+      "contentLanguage": ["en", "es"]
+    },
+    {
+      "id": "moviebox",
+      "name": "MovieBox",
+      "description": "MovieBox - Hindi, Tamil, Telugu & English Movies and Series with multi-quality streams",
+      "version": "1.0.0",
+      "author": "Sanchit (@S4NCHITT) — Murph's Streams",
+      "supportedTypes": ["movie", "tv"],
+      "filename": "providers/moviebox.js",
+      "enabled": true,
+      "formats": ["mp4", "m3u8"],
+      "logo": "https://github.com/NivinCNC/CNCVerse-Cloud-Stream-Extension/raw/refs/heads/master/MovieBoxProvider/icon.png",
+      "contentLanguage": ["en", "hi", "ta", "te"]  
     },
     {
       "id": "moviesmod",
