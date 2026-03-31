@@ -1,4 +1,4 @@
-we// Dahmer Movies Scraper for Nuvio Local Scrapers
+// Dahmer Movies Scraper for Nuvio Local Scrapers
 // React Native compatible version
 
 console.log('[DahmerMovies] Initializing Dahmer Movies scraper');
