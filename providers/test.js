@@ -1,161 +1,177 @@
 const axios = require("axios");
-const cheerio = require("cheerio");
-const { decode, idToSlug } = require("../utils/helpers");
-const { extractLinks } = require("./links");
+const { decode, slugToId } = require("../utils/helpers");
 
 const BASE_URL = "https://one.1cinevood.watch";
 const API_URL = `${BASE_URL}/wp-json/wp/v2`;
 
-// ══════════════════════════════════════════════════════════════
-//  GET META (detailed info)
-// ══════════════════════════════════════════════════════════════
-async function getMeta(id, type) {
-  const slug = idToSlug(id);
-  
+const CATEGORY_MAP = {
+  "cinevood-latest": "",
+  "cinevood-bollywood": "bollywood",
+  "cinevood-hollywood": "hollywood",
+  "cinevood-tamil": "tamil",
+  "cinevood-telugu": "telugu",
+  "cinevood-webseries": "web-series"
+};
+
+const catCache = new Map();
+
+async function getCategoryId(slug) {
+  if (catCache.has(slug)) return catCache.get(slug);
+
   try {
-    const { data } = await axios.get(`${API_URL}/posts`, {
+    const response = await axios.get(`${API_URL}/categories`, {
       params: { slug, per_page: 1 },
       timeout: 15000,
       headers: {
         "User-Agent": "Mozilla/5.0",
-        "Accept": "application/json"
+        "Accept": "application/json, text/plain, */*"
       }
     });
-    
-    if (!Array.isArray(data) || data.length === 0) {
-      throw new Error("Post not found");
+
+    const data = response.data;
+    if (Array.isArray(data) && data.length > 0) {
+      const id = data[0].id;
+      catCache.set(slug, id);
+      return id;
     }
-    
-    const post = data[0];
-    const title = decode(post.title?.rendered || "");
-    const contentHtml = post.content?.rendered || "";
-    
-    // Parse content with cheerio
-    const $ = cheerio.load(contentHtml);
-    
-    // Poster
-    let poster = null;
-    try {
-      poster = post.meta?.fifu_image_url || null;
-    } catch (e) {}
-    
-    if (!poster) {
-      poster = $("img[src*='tmdb']").attr("src") ||
-               $("img[src*='bmscdn']").attr("src") ||
-               $("img[src*='media-amazon']").attr("src") ||
-               null;
-    }
-    
-    // Background (use poster)
-    const background = poster;
-    
-    // Plot/Description
-    let description = $("#summary").text() || "";
-    if (description) {
-      description = description.replace(/Summary:\s*/i, "").replace(/Read all/i, "").trim();
-    }
-    if (!description) {
-      description = $("p").filter((i, el) => {
-        return $(el).text().toLowerCase().includes("plot:");
-      }).first().text().replace(/Plot:\s*/i, "").trim();
-    }
-    if (!description) {
-      description = post.excerpt?.rendered ? decode(post.excerpt.rendered) : "";
-    }
-    
-    // Genres
-    const genres = [];
-    const genreMatch = contentHtml.match(/Genres:<\/strong>\s*([^<]+)/);
-    if (genreMatch) {
-      genreMatch[1].split(",").forEach(g => genres.push(g.trim()));
-    }
-    
-    // Year
-    const yearMatch = title.match(/\((\d{4})\)/);
-    const releaseInfo = yearMatch ? yearMatch[1] : undefined;
-    
-    // IMDb rating
-    let imdbRating = null;
-    const ratingMatch = contentHtml.match(/Rating:<\/strong>\s*([\d.]+)/);
-    if (ratingMatch) {
-      imdbRating = ratingMatch[1];
-    }
-    
-    // Runtime
-    let runtime = null;
-    const runtimeMatch = contentHtml.match(/Runtime:<\/strong>\s*(\d+h\s*\d+m|\d+m)/);
-    if (runtimeMatch) {
-      runtime = runtimeMatch[1];
-    }
-    
-    // Director
-    const directorMatch = contentHtml.match(/Director:<\/strong>\s*([^<]+)/);
-    const director = directorMatch ? [directorMatch[1].trim()] : undefined;
-    
-    // Cast
-    const castMatch = contentHtml.match(/Actors:<\/strong>\s*([^<]+)/);
-    const cast = castMatch ? castMatch[1].split(",").map(c => c.trim()) : undefined;
-    
-    return {
-      id,
-      type,
-      name: title,
-      poster,
-      posterShape: "poster",
-      background,
-      logo: null,
-      description: description.substring(0, 500),
-      releaseInfo,
-      runtime,
-      genres,
-      director,
-      cast,
-      imdbRating,
-      links: [
-        {
-          name: "CineVood",
-          category: "Website",
-          url: post.link
-        }
-      ]
-    };
-    
   } catch (error) {
-    console.error("Meta fetch error:", error.message);
-    throw error;
+    console.error(`Category ID error for ${slug}:`, error.message);
+  }
+
+  return null;
+}
+
+async function getCatalog(catalogId, type, page = 1) {
+  const categorySlug = CATEGORY_MAP[catalogId] || "";
+
+  let url = `${API_URL}/posts?per_page=20&page=${page}`;
+
+  if (categorySlug) {
+    const catId = await getCategoryId(categorySlug);
+    if (catId) {
+      url += `&categories=${catId}`;
+    }
+  }
+
+  try {
+    console.log("[CATALOG URL]", url);
+
+    const response = await axios.get(url, {
+      timeout: 20000,
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json, text/plain, */*"
+      },
+      validateStatus: () => true
+    });
+
+    const data = response.data;
+
+    console.log("[CATALOG STATUS]", response.status);
+    console.log("[CATALOG TYPE]", typeof data);
+
+    // If API did not return array, send debug item
+    if (!Array.isArray(data)) {
+      return [
+        {
+          id: "cv:debug-non-array",
+          type: "movie",
+          name: `DEBUG non-array status=${response.status}`,
+          poster: null,
+          posterShape: "poster",
+          description: typeof data === "string" ? data.substring(0, 200) : JSON.stringify(data).substring(0, 200)
+        }
+      ];
+    }
+
+    if (data.length === 0) {
+      return [
+        {
+          id: "cv:debug-empty-array",
+          type: "movie",
+          name: `DEBUG empty array`,
+          poster: null,
+          posterShape: "poster",
+          description: `catalogId=${catalogId} slug=${categorySlug} page=${page}`
+        }
+      ];
+    }
+
+    return data.map(post => {
+      const title = decode(post.title?.rendered || "");
+      const slug = post.slug || "";
+      const link = post.link || "";
+
+      let poster = null;
+      try {
+        poster = post.meta?.fifu_image_url || null;
+      } catch (e) {}
+
+      if (!poster && post.content?.rendered) {
+        const imgMatch = post.content.rendered.match(/src=["'](https?:\/\/image\.tmdb\.org[^"']+)["']/);
+        if (imgMatch) poster = imgMatch[1];
+      }
+
+      const isSeries =
+        title.toLowerCase().includes("season") ||
+        link.includes("web-series") ||
+        link.includes("tv-shows");
+
+      return {
+        id: slugToId(slug),
+        type: isSeries ? "series" : "movie",
+        name: title,
+        poster: poster,
+        posterShape: "poster",
+        description: post.excerpt?.rendered ? decode(post.excerpt.rendered).substring(0, 200) : undefined
+      };
+    });
+
+  } catch (error) {
+    console.error("Catalog fetch error:", error.message);
+
+    return [
+      {
+        id: "cv:debug-error",
+        type: "movie",
+        name: `DEBUG error`,
+        poster: null,
+        posterShape: "poster",
+        description: error.message.substring(0, 200)
+      }
+    ];
   }
 }
 
-// ══════════════════════════════════════════════════════════════
-//  GET STREAMS (video links)
-// ══════════════════════════════════════════════════════════════
-async function getStreams(id, type) {
-  const slug = idToSlug(id);
-  
+async function search(query) {
   try {
-    const { data } = await axios.get(`${API_URL}/posts`, {
-      params: { slug, per_page: 1 },
+    const response = await axios.get(`${API_URL}/posts`, {
+      params: { search: query, per_page: 20 },
       timeout: 15000,
       headers: {
         "User-Agent": "Mozilla/5.0",
-        "Accept": "application/json"
-      }
+        "Accept": "application/json, text/plain, */*"
+      },
+      validateStatus: () => true
     });
-    
-    if (!Array.isArray(data) || data.length === 0) {
-      return [];
-    }
-    
-    const contentHtml = data[0].content?.rendered || "";
-    const postUrl = data[0].link || "";
-    
-    // Extract links from content
-    const streams = await extractLinks(contentHtml, postUrl);
-    
-    return streams;
-    
+
+    const data = response.data;
+
+    if (!Array.isArray(data)) return [];
+
+    return data.map(post => {
+      const title = decode(post.title?.rendered || "");
+      const slug = post.slug || "";
+
+      return {
+        id: slugToId(slug),
+        type: "movie",
+        name: title
+      };
+    });
+
   } catch (error) {
-    console.error("Stream fetch error:", error.message);
+    console.error("Search error:", error.message);
     return [];
   }
 }
