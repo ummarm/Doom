@@ -1,635 +1,403 @@
-// Watch32 Scraper for Nuvio Local Scrapers
-// React Native compatible version - Standalone (no external dependencies)
+// Dahmer Movies Scraper for Nuvio Local Scrapers
+// React Native compatible version
 
-// Import cheerio-without-node-native for React Native
-const cheerio = require('cheerio-without-node-native');
-console.log('[Watch32] Using cheerio-without-node-native for DOM parsing');
+console.log('[DahmerMovies] Initializing Dahmer Movies scraper');
 
 // Constants
 const TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
-const MAIN_URL = 'https://watch32.sx';
-const VIDEOSTR_URL = 'https://videostr.net';
+const DAHMER_MOVIES_API = 'https://a.111477.xyz';
+const TIMEOUT = 20000; // 20 seconds
 
-/**
- * Improved title matching utilities for Watch32
- */
+const BATCH_SIZE = 3;          // links resolved in parallel per batch
+const BATCH_GAP_MS = 400;      // gap between batches (only paid when a 429 occurred)
+const RETRY_BASE_MS = 2000;    // base wait on 429 before retrying a single link
 
-/**
- * Normalizes a title for better matching
- * @param {string} title The title to normalize
- * @returns {string} Normalized title
- */
-function normalizeTitle(title) {
-    if (!title) return '';
-
-    return title
-        // Convert to lowercase
-        .toLowerCase()
-        // Remove common articles
-        .replace(/\b(the|a|an)\b/g, '')
-        // Normalize punctuation and spaces
-        .replace(/[:\-_]/g, ' ')
-        .replace(/\s+/g, ' ')
-        // Remove special characters but keep alphanumeric and spaces
-        .replace(/[^\w\s]/g, '')
-        .trim();
-}
-
-/**
- * Calculates similarity score between two titles
- * @param {string} title1 First title
- * @param {string} title2 Second title
- * @returns {number} Similarity score (0-1)
- */
-function calculateTitleSimilarity(title1, title2) {
-    const norm1 = normalizeTitle(title1);
-    const norm2 = normalizeTitle(title2);
-
-    // Exact match after normalization
-    if (norm1 === norm2) return 1.0;
-
-    // Substring matches
-    if (norm1.includes(norm2) || norm2.includes(norm1)) return 0.9;
-
-    // Word-based similarity
-    const words1 = new Set(norm1.split(/\s+/).filter(w => w.length > 2));
-    const words2 = new Set(norm2.split(/\s+/).filter(w => w.length > 2));
-
-    if (words1.size === 0 || words2.size === 0) return 0;
-
-    const intersection = new Set([...words1].filter(w => words2.has(w)));
-    const union = new Set([...words1, ...words2]);
-
-    return intersection.size / union.size;
-}
-
-/**
- * Finds the best title match from search results
- * @param {Array} searchResults Search results array
- * @param {string} tmdbTitle TMDB title
- * @param {number} tmdbYear TMDB year
- * @param {string} mediaType "movie" or "tv"
- * @returns {Object|null} Best matching result
- */
-function findBestTitleMatch(searchResults, tmdbTitle, tmdbYear, mediaType) {
-    if (!searchResults || searchResults.length === 0) return null;
-
-    let bestMatch = null;
-    let bestScore = 0;
-
-    for (const result of searchResults) {
-        let score = calculateTitleSimilarity(tmdbTitle, result.title);
-
-        // Year matching bonus/penalty
-        if (tmdbYear && result.year) {
-            const yearDiff = Math.abs(tmdbYear - result.year);
-            if (yearDiff === 0) {
-                score += 0.2; // Exact year match bonus
-            } else if (yearDiff <= 1) {
-                score += 0.1; // Close year match bonus
-            } else if (yearDiff > 5) {
-                score -= 0.3; // Large year difference penalty
-            }
-        }
-
-        // Media type validation (if available)
-        if (mediaType && result.type) {
-            const expectedType = mediaType === 'tv' ? 'tv' : 'movie';
-            const resultType = result.type.toLowerCase();
-            if (resultType.includes(expectedType) || expectedType.includes(resultType)) {
-                score += 0.1; // Type match bonus
-            }
-        }
-
-        if (score > bestScore && score > 0.3) { // Minimum threshold
-            bestScore = score;
-            bestMatch = result;
-        }
-    }
-
-    if (bestMatch) {
-        console.log(`[Watch32] Best title match: "${bestMatch.title}" (${bestMatch.year || 'N/A'}) - Score: ${bestScore.toFixed(2)}`);
-    }
-
-    return bestMatch;
-}
+// Quality mapping
+const Qualities = {
+    Unknown: 0,
+    P144: 144,
+    P240: 240,
+    P360: 360,
+    P480: 480,
+    P720: 720,
+    P1080: 1080,
+    P1440: 1440,
+    P2160: 2160
+};
 
 // Helper function to make HTTP requests
 function makeRequest(url, options = {}) {
-    const defaultHeaders = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Connection': 'keep-alive'
+    const requestOptions = {
+        timeout: TIMEOUT,
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Connection': 'keep-alive',
+            ...options.headers
+        },
+        ...options
     };
 
-    return fetch(url, {
-        method: options.method || 'GET',
-        headers: { ...defaultHeaders, ...options.headers },
-        ...options
-    })
-    .then(response => {
+    return fetch(url, requestOptions).then(function (response) {
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
         return response;
-    })
-    .catch(error => {
-        console.error(`[Watch32] Request failed for ${url}: ${error.message}`);
-        throw error;
     });
 }
 
-// Search for content
-function searchContent(query) {
-    const searchUrl = `${MAIN_URL}/search/${query.replace(/\s+/g, '-')}`;
-    console.log(`[Watch32] Searching: ${searchUrl}`);
-    
-    return makeRequest(searchUrl)
-        .then(response => response.text())
-        .then(html => {
-            const $ = cheerio.load(html);
-            const results = [];
-            
-            $('.flw-item').each((i, element) => {
-                const title = $(element).find('h2.film-name > a').attr('title');
-                const link = $(element).find('h2.film-name > a').attr('href');
-                const poster = $(element).find('img.film-poster-img').attr('data-src');
-                
-                if (title && link) {
-                    results.push({
-                        title,
-                        url: link.startsWith('http') ? link : `${MAIN_URL}${link}`,
-                        poster
-                    });
+// Utility functions
+function getEpisodeSlug(season = null, episode = null) {
+    if (season === null && episode === null) {
+        return ['', ''];
+    }
+    const seasonSlug = season < 10 ? `0${season}` : `${season}`;
+    const episodeSlug = episode < 10 ? `0${episode}` : `${episode}`;
+    return [seasonSlug, episodeSlug];
+}
+
+function getIndexQuality(str) {
+    if (!str) return Qualities.Unknown;
+    const match = str.match(/(\d{3,4})[pP]/);
+    return match ? parseInt(match[1]) : Qualities.Unknown;
+}
+
+function getQualityWithCodecs(str) {
+    if (!str) return 'Unknown';
+
+    const qualityMatch = str.match(/(\d{3,4})[pP]/);
+    const baseQuality = qualityMatch ? `${qualityMatch[1]}p` : 'Unknown';
+
+    const codecs = [];
+    const lowerStr = str.toLowerCase();
+
+    if (lowerStr.includes('dv') || lowerStr.includes('dolby vision')) codecs.push('DV');
+    if (lowerStr.includes('hdr10+')) codecs.push('HDR10+');
+    else if (lowerStr.includes('hdr10') || lowerStr.includes('hdr')) codecs.push('HDR');
+
+    if (lowerStr.includes('remux')) codecs.push('REMUX');
+    if (lowerStr.includes('imax')) codecs.push('IMAX');
+
+    if (codecs.length > 0) {
+        return `${baseQuality} | ${codecs.join(' | ')}`;
+    }
+
+    return baseQuality;
+}
+
+function getIndexQualityTags(str, fullTag = false) {
+    if (!str) return '';
+
+    if (fullTag) {
+        const match = str.match(/(.*)\.(?:mkv|mp4|avi)/i);
+        return match ? match[1].trim() : str;
+    } else {
+        const match = str.match(/\d{3,4}[pP]\.?(.*?)\.(mkv|mp4|avi)/i);
+        return match ? match[1].replace(/\./g, ' ').trim() : str;
+    }
+}
+
+function encodeUrl(url) {
+    try {
+        return encodeURI(url);
+    } catch (e) {
+        return url;
+    }
+}
+
+function decode(input) {
+    try {
+        return decodeURIComponent(input);
+    } catch (e) {
+        return input;
+    }
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Resolve redirects to get the final direct URL
+// Returns { url, hit429 } so callers know whether to back off
+function resolveFinalUrl(startUrl) {
+    const maxRedirects = 5;
+    const referer = 'https://a.111477.xyz/';
+    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
+
+    function attemptResolve(url, count, retryCount = 0) {
+        if (count >= maxRedirects) {
+            return Promise.resolve({ url: url.includes('111477.xyz') ? null : url, hit429: false });
+        }
+
+        return fetch(url, {
+            method: 'HEAD',
+            redirect: 'manual',
+            headers: { 'User-Agent': userAgent, 'Referer': referer }
+        }).then(function (response) {
+            if (response.status === 429) {
+                if (retryCount < 3) {
+                    const waitTime = RETRY_BASE_MS * Math.pow(2, retryCount); // exponential: 2s, 4s, 8s
+                    console.log(`[DahmerMovies] 429 received, retrying in ${waitTime}ms (attempt ${retryCount + 1})`);
+                    return sleep(waitTime).then(() => attemptResolve(url, count, retryCount + 1));
                 }
-            });
-            
-            console.log(`[Watch32] Found ${results.length} search results`);
-            return results;
-        })
-        .catch(error => {
-            console.error(`[Watch32] Search error: ${error.message}`);
+                return { url: null, hit429: true };
+            }
+
+            if (response.status >= 300 && response.status < 400) {
+                const location = response.headers.get('location');
+                if (location) {
+                    const nextUrl = location.startsWith('http')
+                        ? location
+                        : new URL(location, url).href;
+                    return attemptResolve(nextUrl, count + 1);
+                }
+            }
+
+            if (url.includes('111477.xyz')) {
+                return { url: null, hit429: false };
+            }
+
+            return { url, hit429: false };
+        }).catch(function () {
+            return { url: null, hit429: false };
+        });
+    }
+
+    return attemptResolve(startUrl, 0);
+}
+
+// Format file size from bytes to human readable format
+function formatFileSize(sizeText) {
+    if (!sizeText) return null;
+
+    if (/\d+(\.\d+)?\s*(GB|MB|KB|TB)/i.test(sizeText)) {
+        return sizeText;
+    }
+
+    const bytes = parseInt(sizeText);
+    if (isNaN(bytes)) return sizeText;
+
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    if (bytes === 0) return '0 Bytes';
+
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    const size = (bytes / Math.pow(1024, i)).toFixed(2);
+
+    return `${size} ${sizes[i]}`;
+}
+
+function parseLinks(html) {
+    const links = [];
+
+    const rowRegex = /<tr[^>]*>(.*?)<\/tr>/gis;
+    let rowMatch;
+
+    while ((rowMatch = rowRegex.exec(html)) !== null) {
+        const rowContent = rowMatch[1];
+
+        const linkMatch = rowContent.match(/<a[^>]*href=["']([^"']*)["'][^>]*>([^<]*)<\/a>/i);
+        if (!linkMatch) continue;
+
+        const href = linkMatch[1];
+        const text = linkMatch[2].trim();
+
+        if (!text || href === '../' || text === '../') continue;
+
+        let size = null;
+
+        const sizeMatch1 = rowContent.match(/<td[^>]*data-sort=["']?(\d+)["']?[^>]*>/i);
+        if (sizeMatch1) size = sizeMatch1[1];
+
+        if (!size) {
+            const sizeMatch2 = rowContent.match(/<td[^>]*class=["']filesize["'][^>]*[^>]*>([^<]+)<\/td>/i);
+            if (sizeMatch2) size = sizeMatch2[1].trim();
+        }
+
+        if (!size) {
+            const sizeMatch3 = rowContent.match(/<\/a><\/td>\s*<td[^>]*>([^<]+(?:GB|MB|KB|B|\d+\s*(?:GB|MB|KB|B)))<\/td>/i);
+            if (sizeMatch3) size = sizeMatch3[1].trim();
+        }
+
+        if (!size) {
+            const sizeMatch4 = rowContent.match(/(\d+(?:\.\d+)?\s*(?:GB|MB|KB|B|bytes?))/i);
+            if (sizeMatch4) size = sizeMatch4[1].trim();
+        }
+
+        links.push({ text, href, size });
+    }
+
+    if (links.length === 0) {
+        const linkRegex = /<a[^>]*href=["']([^"']*)["'][^>]*>([^<]*)<\/a>/gi;
+        let match;
+        while ((match = linkRegex.exec(html)) !== null) {
+            const href = match[1];
+            const text = match[2].trim();
+            if (text && href && href !== '../' && text !== '../') {
+                links.push({ text, href, size: null });
+            }
+        }
+    }
+
+    return links;
+}
+
+// Resolve a single path entry into a result object (or null on failure)
+function resolvePath(path, encodedUrl) {
+    const qualityWithCodecs = getQualityWithCodecs(path.text);
+
+    let fullUrl;
+    if (path.href.startsWith('http')) {
+        try {
+            const url = new URL(path.href);
+            fullUrl = `${url.protocol}//${url.host}${url.pathname}`;
+        } catch (error) {
+            fullUrl = path.href.replace(/ /g, '%20');
+        }
+    } else if (path.href.startsWith('/')) {
+        const urlObj = new URL(DAHMER_MOVIES_API);
+        const encodedPath = path.href.split('/').map(p => encodeURIComponent(decode(p))).join('/');
+        fullUrl = `${urlObj.protocol}//${urlObj.host}${encodedPath}`;
+    } else {
+        const baseUrl = encodedUrl.endsWith('/') ? encodedUrl : encodedUrl + '/';
+        const encodedPath = path.href.split('/').map(p => encodeURIComponent(decode(p))).join('/');
+        fullUrl = baseUrl + encodedPath;
+    }
+
+    return resolveFinalUrl(fullUrl).then(function ({ url, hit429 }) {
+        if (!url) return { result: null, hit429 };
+        return {
+            result: {
+                name: "DahmerMovies",
+                title: path.text,
+                url,
+                quality: qualityWithCodecs,
+                size: formatFileSize(path.size),
+                type: "direct",
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Android) ExoPlayer',
+                    'Referer': DAHMER_MOVIES_API + '/'
+                },
+                provider: "dahmermovies",
+                filename: path.text
+            },
+            hit429
+        };
+    }).catch(function () {
+        return { result: null, hit429: false };
+    });
+}
+
+// Main Dahmer Movies fetcher function
+function invokeDahmerMovies(title, year, season = null, episode = null) {
+    console.log(`[DahmerMovies] Searching for: ${title} (${year})${season ? ` Season ${season}` : ''}${episode ? ` Episode ${episode}` : ''}`);
+
+    const encodedUrl = season === null
+        ? `${DAHMER_MOVIES_API}/movies/${encodeURIComponent(title.replace(/:/g, '') + ' (' + year + ')')}/`
+        : `${DAHMER_MOVIES_API}/tvs/${encodeURIComponent(title.replace(/:/g, ' -'))}/${encodeURIComponent('Season ' + season)}/`;
+
+    console.log(`[DahmerMovies] Fetching from: ${encodedUrl}`);
+
+    return makeRequest(encodedUrl).then(function (response) {
+        return response.text();
+    }).then(function (html) {
+        console.log(`[DahmerMovies] Response length: ${html.length}`);
+
+        const paths = parseLinks(html);
+        console.log(`[DahmerMovies] Found ${paths.length} total links`);
+
+        let filteredPaths;
+        if (season === null) {
+            filteredPaths = paths.filter(path => /(1080p|2160p)/i.test(path.text));
+            console.log(`[DahmerMovies] Filtered to ${filteredPaths.length} movie links (1080p/2160p only)`);
+        } else {
+            const [seasonSlug, episodeSlug] = getEpisodeSlug(season, episode);
+            const episodePattern = new RegExp(`S${seasonSlug}E${episodeSlug}`, 'i');
+            filteredPaths = paths.filter(path => episodePattern.test(path.text));
+            console.log(`[DahmerMovies] Filtered to ${filteredPaths.length} TV episode links (S${seasonSlug}E${episodeSlug})`);
+        }
+
+        if (filteredPaths.length === 0) {
+            console.log('[DahmerMovies] No matching content found');
             return [];
-        });
-}
+        }
 
-// Get content details (movie or TV series)
-function getContentDetails(url) {
-    console.log(`[Watch32] Getting content details: ${url}`);
-    
-    return makeRequest(url)
-        .then(response => response.text())
-        .then(html => {
-            const $ = cheerio.load(html);
-            const contentId = $('.detail_page-watch').attr('data-id');
-            const name = $('.detail_page-infor h2.heading-name > a').text();
-            const isMovie = url.includes('movie');
-            
-            if (isMovie) {
-                return {
-                    type: 'movie',
-                    name,
-                    data: `list/${contentId}`
-                };
-            } else {
-                // Get TV series episodes
-                return makeRequest(`${MAIN_URL}/ajax/season/list/${contentId}`)
-                    .then(response => response.text())
-                    .then(seasonsHtml => {
-                        const $seasons = cheerio.load(seasonsHtml);
-                        const episodes = [];
-                        const seasonPromises = [];
-                        
-                        $seasons('a.ss-item').each((i, season) => {
-                            const seasonId = $(season).attr('data-id');
-                            const seasonNum = $(season).text().replace('Season ', '');
-                            
-                            const episodePromise = makeRequest(`${MAIN_URL}/ajax/season/episodes/${seasonId}`)
-                                .then(response => response.text())
-                                .then(episodesHtml => {
-                                    const $episodes = cheerio.load(episodesHtml);
-                                    
-                                    $episodes('a.eps-item').each((i, episode) => {
-                                        const epId = $(episode).attr('data-id');
-                                        const title = $(episode).attr('title');
-                                        const match = title.match(/Eps (\d+): (.+)/);
-                                        
-                                        if (match) {
-                                            episodes.push({
-                                                id: epId,
-                                                episode: parseInt(match[1]),
-                                                name: match[2],
-                                                season: parseInt(seasonNum.replace('Series', '').trim()),
-                                                data: `servers/${epId}`
-                                            });
-                                        }
-                                    });
-                                });
-                            
-                            seasonPromises.push(episodePromise);
-                        });
-                        
-                        return Promise.all(seasonPromises)
-                            .then(() => ({
-                                type: 'series',
-                                name,
-                                episodes
-                            }));
-                    });
-            }
-        })
-        .catch(error => {
-            console.error(`[Watch32] Content details error: ${error.message}`);
-            return null;
-        });
-}
+        const pathsToProcess = filteredPaths.slice(0, 10);
+        const results = [];
 
-// Get server links for content
-function getServerLinks(data) {
-    console.log(`[Watch32] Getting server links: ${data}`);
-    
-    return makeRequest(`${MAIN_URL}/ajax/episode/${data}`)
-        .then(response => response.text())
-        .then(html => {
-            const $ = cheerio.load(html);
-            const servers = [];
-            
-            $('a.link-item').each((i, element) => {
-                const linkId = $(element).attr('data-linkid') || $(element).attr('data-id');
-                if (linkId) {
-                    servers.push(linkId);
-                }
-            });
-            
-            return servers;
-        })
-        .catch(error => {
-            console.error(`[Watch32] Server links error: ${error.message}`);
-            return [];
-        });
-}
+        // Process in parallel batches — only delay between batches if a 429 was hit
+        async function processBatches() {
+            for (let i = 0; i < pathsToProcess.length; i += BATCH_SIZE) {
+                const batch = pathsToProcess.slice(i, i + BATCH_SIZE);
+                console.log(`[DahmerMovies] Processing batch ${Math.floor(i / BATCH_SIZE) + 1} (${batch.length} links)`);
 
-// Get source URL from link ID
-function getSourceUrl(linkId) {
-    console.log(`[Watch32] Getting source URL for linkId: ${linkId}`);
-    
-    return makeRequest(`${MAIN_URL}/ajax/episode/sources/${linkId}`)
-        .then(response => response.json())
-        .then(data => data.link)
-        .catch(error => {
-            console.error(`[Watch32] Source URL error: ${error.message}`);
-            return null;
-        });
-}
+                const batchResults = await Promise.all(
+                    batch.map(path => resolvePath(path, encodedUrl))
+                );
 
-// Extract M3U8 from Videostr
-function extractVideostrM3u8(url) {
-    console.log(`[Watch32] Extracting from Videostr: ${url}`);
-    
-    const headers = {
-        'Accept': '*/*',
-        'X-Requested-With': 'XMLHttpRequest',
-        'Referer': VIDEOSTR_URL,
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; Win64; x64) AppleWebKit/537.36'
-    };
-
-    // Extract ID from URL
-    const id = url.split('/').pop().split('?')[0];
-    
-    // Get nonce from embed page
-    return makeRequest(url, { headers })
-        .then(response => response.text())
-        .then(embedHtml => {
-            // Try to find 48-character nonce
-            let nonce = embedHtml.match(/\b[a-zA-Z0-9]{48}\b/);
-            if (nonce) {
-                nonce = nonce[0];
-            } else {
-                // Try to find three 16-character segments
-                const matches = embedHtml.match(/\b([a-zA-Z0-9]{16})\b.*?\b([a-zA-Z0-9]{16})\b.*?\b([a-zA-Z0-9]{16})\b/);
-                if (matches) {
-                    nonce = matches[1] + matches[2] + matches[3];
-                }
-            }
-            
-            if (!nonce) {
-                throw new Error('Could not extract nonce');
-            }
-            
-            console.log(`[Watch32] Extracted nonce: ${nonce}`);
-            
-            // Get sources from API
-            const apiUrl = `${VIDEOSTR_URL}/embed-1/v3/e-1/getSources?id=${id}&_k=${nonce}`;
-            console.log(`[Watch32] API URL: ${apiUrl}`);
-            
-            return makeRequest(apiUrl, { headers })
-                .then(response => response.json())
-                .then(sourcesData => {
-                    console.log('[Watch32] Sources data:', JSON.stringify(sourcesData, null, 2));
-                    
-                    if (!sourcesData.sources || sourcesData.sources.length === 0) {
-                        throw new Error('No sources found in response');
-                    }
-                    
-                    // Get the first source file (matching Kotlin logic)
-                    const encoded = sourcesData.sources[0].file;
-                    console.log('[Watch32] Encoded source:', encoded);
-                    
-                    // Check if sources is already an M3U8 URL
-                    if (encoded.includes('.m3u8')) {
-                        console.log('[Watch32] Source is already M3U8 URL');
-                        return encoded;
-                    }
-                    
-                    console.log('[Watch32] Sources are encrypted, attempting to decrypt...');
-                    
-                    // Get decryption key - use 'mega' key like Kotlin version
-                    return makeRequest('https://raw.githubusercontent.com/yogesh-hacker/MegacloudKeys/refs/heads/main/keys.json')
-                        .then(response => response.json())
-                        .then(keyData => {
-                            console.log('[Watch32] Key data:', JSON.stringify(keyData, null, 2));
-                            
-                            const key = keyData.mega; // Use 'mega' key like Kotlin
-                            
-                            if (!key) {
-                                throw new Error('Could not get decryption key (mega)');
-                            }
-                            
-                            console.log('[Watch32] Using mega key for decryption');
-                            
-                            // Decrypt using Google Apps Script - exact same logic as Kotlin
-                            const decodeUrl = 'https://script.google.com/macros/s/AKfycbxHbYHbrGMXYD2-bC-C43D3njIbU-wGiYQuJL61H4vyy6YVXkybMNNEPJNPPuZrD1gRVA/exec';
-                            const fullUrl = `${decodeUrl}?encrypted_data=${encodeURIComponent(encoded)}&nonce=${encodeURIComponent(nonce)}&secret=${encodeURIComponent(key)}`;
-                            
-                            console.log('[Watch32] Decryption URL:', fullUrl);
-                            
-                            return makeRequest(fullUrl)
-                                .then(response => response.text())
-                                .then(decryptedData => {
-                                    console.log('[Watch32] Decrypted response:', decryptedData);
-                                    
-                                    // Extract file URL from decrypted response - exact same regex as Kotlin
-                                    const fileMatch = decryptedData.match(/"file":"(.*?)"/); 
-                                    if (fileMatch) {
-                                        const m3u8Url = fileMatch[1];
-                                        console.log('[Watch32] Extracted M3U8 URL:', m3u8Url);
-                                        return m3u8Url;
-                                    } else {
-                                        throw new Error('Video URL not found in decrypted response');
-                                    }
-                                });
-                        });
-                })
-                .then(finalM3u8Url => {
-                    console.log(`[Watch32] Final M3U8 URL: ${finalM3u8Url}`);
-                    
-                    // Accept both megacdn and other reliable CDN links
-                    if (!finalM3u8Url.includes('megacdn.co') && !finalM3u8Url.includes('akmzed.cloud') && !finalM3u8Url.includes('sunnybreeze')) {
-                        console.log('[Watch32] Skipping unreliable CDN link');
-                        return null;
-                    }
-                    
-                    // Parse master playlist to extract quality streams
-                    return parseM3U8Qualities(finalM3u8Url)
-                        .then(qualities => ({
-                            m3u8Url: finalM3u8Url,
-                            qualities,
-                            headers: {
-                                'Referer': 'https://videostr.net/',
-                                'Origin': 'https://videostr.net/',
-                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                            }
-                        }));
+                let anyHit429 = false;
+                batchResults.forEach(function ({ result, hit429 }) {
+                    if (result) results.push(result);
+                    if (hit429) anyHit429 = true;
                 });
-        })
-        .catch(error => {
-            console.error(`[Watch32] Videostr extraction error: ${error.message}`);
-            return null;
-        });
-}
 
-// Parse M3U8 master playlist to extract qualities
-function parseM3U8Qualities(masterUrl) {
-    return makeRequest(masterUrl, {
-        headers: {
-            'Referer': 'https://videostr.net/',
-            'Origin': 'https://videostr.net/'
-        }
-    })
-    .then(response => response.text())
-    .then(playlist => {
-        const qualities = [];
-        
-        // Parse M3U8 master playlist
-        const lines = playlist.split('\n');
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (line.startsWith('#EXT-X-STREAM-INF:')) {
-                const nextLine = lines[i + 1]?.trim();
-                if (nextLine && !nextLine.startsWith('#')) {
-                    // Extract resolution and bandwidth
-                    const resolutionMatch = line.match(/RESOLUTION=(\d+x\d+)/);
-                    const bandwidthMatch = line.match(/BANDWIDTH=(\d+)/);
-                    
-                    const resolution = resolutionMatch ? resolutionMatch[1] : 'Unknown';
-                    const bandwidth = bandwidthMatch ? parseInt(bandwidthMatch[1]) : 0;
-                    
-                    // Determine quality label
-                    let quality = 'Unknown';
-                    if (resolution.includes('1920x1080')) quality = '1080p';
-                    else if (resolution.includes('1280x720')) quality = '720p';
-                    else if (resolution.includes('640x360')) quality = '360p';
-                    else if (resolution.includes('854x480')) quality = '480p';
-                    
-                    qualities.push({
-                        quality,
-                        resolution,
-                        bandwidth,
-                        url: nextLine.startsWith('http') ? nextLine : new URL(nextLine, masterUrl).href
-                    });
+                // Only sleep between batches if the server pushed back
+                if (anyHit429 && i + BATCH_SIZE < pathsToProcess.length) {
+                    console.log(`[DahmerMovies] Batch hit 429 — pausing ${BATCH_GAP_MS}ms before next batch`);
+                    await sleep(BATCH_GAP_MS);
                 }
             }
+
+            results.sort((a, b) => getIndexQuality(b.filename) - getIndexQuality(a.filename));
+            console.log(`[DahmerMovies] Successfully processed ${results.length} streams`);
+            return results;
         }
-        
-        // Sort by bandwidth (highest first)
-        qualities.sort((a, b) => b.bandwidth - a.bandwidth);
-        
-        return qualities;
-    })
-    .catch(error => {
-        console.error(`[Watch32] Error parsing M3U8 qualities: ${error.message}`);
+
+        return processBatches();
+
+    }).catch(function (error) {
+        if (error.name === 'AbortError') {
+            console.log('[DahmerMovies] Request timeout - server took too long to respond');
+        } else {
+            console.log(`[DahmerMovies] Error: ${error.message}`);
+        }
         return [];
     });
 }
 
-// Main scraping function
-function getStreams(tmdbId, mediaType, season, episode) {
-    console.log(`[Watch32] Searching for: ${tmdbId} (${mediaType})`);
-    
-    // First, get movie/TV show details from TMDB
-    const tmdbUrl = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
-    
-    return makeRequest(tmdbUrl)
-        .then(response => response.json())
-        .then(tmdbData => {
-            const title = mediaType === 'tv' ? tmdbData.name : tmdbData.title;
-            const year = mediaType === 'tv' ? tmdbData.first_air_date?.substring(0, 4) : tmdbData.release_date?.substring(0, 4);
-            
-            if (!title) {
-                throw new Error('Could not extract title from TMDB response');
-            }
-            
-            console.log(`[Watch32] TMDB Info: "${title}" (${year || 'N/A'})`);
-            
-            // Build search query - use title instead of TMDB ID
-            const query = year ? `${title} ${year}` : title;
-            
-            return searchContent(query).then(searchResults => ({ searchResults, query, tmdbData }));
-        })
-        .then(({ searchResults, query, tmdbData }) => {
-            if (searchResults.length === 0) {
-                console.log('[Watch32] No search results found');
-                return [];
-            }
-            
-            console.log(`[Watch32] Found ${searchResults.length} results`);
-            
-            // Use improved title matching
-            const selectedResult = findBestTitleMatch(searchResults, title, year, mediaType);
-            
-            console.log(`[Watch32] Selected: ${selectedResult.title}`);
-            
-            // Get content details
-            return getContentDetails(selectedResult.url).then(contentDetails => ({ contentDetails, tmdbData }));
-        })
-        .then(({ contentDetails, tmdbData }) => {
-            if (!contentDetails) {
-                console.log('[Watch32] Could not get content details');
-                return [];
-            }
-            
-            let itemsToProcess = [];
-            
-            if (contentDetails.type === 'movie') {
-                itemsToProcess.push({ data: contentDetails.data, episodeMeta: null });
-            } else {
-                // For TV series, filter by episode/season if specified
-                let episodes = contentDetails.episodes;
-                
-                if (season) {
-                    episodes = episodes.filter(ep => ep.season === season);
-                }
-                
-                if (episode) {
-                    episodes = episodes.filter(ep => ep.episode === episode);
-                }
-                
-                if (episodes.length === 0) {
-                    console.log('[Watch32] No matching episodes found');
-                    return [];
-                }
-                
-                // Process all matching episodes in parallel
-                episodes.forEach(ep => {
-                    console.log(`[Watch32] Queue episode: S${ep.season}E${ep.episode} - ${ep.name}`);
-                    itemsToProcess.push({ data: ep.data, episodeMeta: ep });
-                });
-            }
-            
-            // Process all data
-            const allPromises = itemsToProcess.map(item => {
-                return getServerLinks(item.data)
-                    .then(serverLinks => {
-                        console.log(`[Watch32] Found ${serverLinks.length} servers`);
-                        
-                        // Process all server links
-                        const linkPromises = serverLinks.map(linkId => {
-                            return getSourceUrl(linkId)
-                                .then(sourceUrl => {
-                                    if (!sourceUrl) return null;
-                                    
-                                    console.log(`[Watch32] Source URL: ${sourceUrl}`);
-                                    
-                                    // Check if it's a videostr URL
-                                    if (sourceUrl.includes('videostr.net')) {
-                                        return extractVideostrM3u8(sourceUrl);
-                                    }
-                                    return null;
-                                })
-                                .catch(error => {
-                                    console.error(`[Watch32] Error processing link ${linkId}: ${error.message}`);
-                                    return null;
-                                });
-                        });
-                        
-                        return Promise.all(linkPromises);
-                    })
-                    .then(results => ({ results, episodeMeta: item.episodeMeta }));
-            });
-            
-            return Promise.all(allPromises).then(resultsWithMeta => ({ resultsWithMeta, tmdbData, contentDetails }));
-        })
-        .then(({ resultsWithMeta, tmdbData, contentDetails }) => {
-            // Flatten and filter results
-            const allM3u8Links = [];
-            for (const item of resultsWithMeta) {
-                const serverResults = item.results;
-                for (const result of serverResults) {
-                    if (result) {
-                        allM3u8Links.push({ link: result, episodeMeta: item.episodeMeta });
-                    }
-                }
-            }
-            
-            // Build title with year and episode info
-            const title = mediaType === 'tv' ? tmdbData.name : tmdbData.title;
-            const year = mediaType === 'tv' ? tmdbData.first_air_date?.substring(0, 4) : tmdbData.release_date?.substring(0, 4);
-            
-            // Convert to Nuvio format
-            const formattedLinks = [];
-            
-            allM3u8Links.forEach(item => {
-                const link = item.link;
-                const episodeMeta = item.episodeMeta;
-                let perItemTitle = `${title} (${year || 'N/A'})`;
-                if (mediaType === 'tv' && episodeMeta) {
-                    perItemTitle += ` - S${episodeMeta.season}E${episodeMeta.episode}`;
-                }
-                if (link.qualities && link.qualities.length > 0) {
-                    link.qualities.forEach(quality => {
-                        formattedLinks.push({
-                            name: `Watch32 - ${quality.quality}`,
-                            title: perItemTitle,
-                            url: quality.url,
-                            quality: quality.quality,
-                            headers: link.headers || {},
-                            subtitles: []
-                        });
-                    });
-                } else {
-                    // Skip unknown quality links
-                    console.log('[Watch32] Skipping unknown quality link');
-                }
-            });
-            
-            console.log(`[Watch32] Total found: ${formattedLinks.length} streams`);
-            return formattedLinks;
-        })
-        .catch(error => {
-            console.error(`[Watch32] Scraping error: ${error.message}`);
-            return [];
-        })
-        .catch(error => {
-            console.error(`[Watch32] TMDB API error: ${error.message}`);
-            return [];
-        });
+// Main function to get streams for TMDB content
+function getStreams(tmdbId, mediaType = 'movie', seasonNum = null, episodeNum = null) {
+    console.log(`[DahmerMovies] Fetching streams for TMDB ID: ${tmdbId}, Type: ${mediaType}${seasonNum ? `, S${seasonNum}E${episodeNum}` : ''}`);
+
+    const tmdbUrl = `https://api.themoviedb.org/3/${mediaType === 'tv' ? 'tv' : 'movie'}/${tmdbId}?api_key=${TMDB_API_KEY}`;
+    return makeRequest(tmdbUrl).then(function (tmdbResponse) {
+        return tmdbResponse.json();
+    }).then(function (tmdbData) {
+        const title = mediaType === 'tv' ? tmdbData.name : tmdbData.title;
+        const year = mediaType === 'tv' ? tmdbData.first_air_date?.substring(0, 4) : tmdbData.release_date?.substring(0, 4);
+
+        if (!title) {
+            throw new Error('Could not extract title from TMDB response');
+        }
+
+        console.log(`[DahmerMovies] TMDB Info: "${title}" (${year})`);
+
+        return invokeDahmerMovies(
+            title,
+            year ? parseInt(year) : null,
+            seasonNum,
+            episodeNum
+        );
+
+    }).catch(function (error) {
+        console.error(`[DahmerMovies] Error in getStreams: ${error.message}`);
+        return [];
+    });
 }
 
 // Export the main function
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { getStreams };
 } else {
-    // For React Native environment
-    global.Watch32ScraperModule = { getStreams };
+    global.getStreams = getStreams;
 }
