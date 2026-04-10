@@ -390,7 +390,6 @@
       "filename": "providers/nakios.js",
       "enabled": true,
       "formats": ["mp4", "m3u8"],
-      "limited": true,
       "logo": "https://i.postimg.cc/nLwY1pJB/nakios.png",
       "contentLanguage": ["fr", "en"]
     },
