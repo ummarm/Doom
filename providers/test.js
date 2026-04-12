@@ -60,13 +60,13 @@ function invokeDahmerMovies(title, year, season = null, episode = null) {
         ? `${title.replace(/:/g, '')} (${year})`
         : `${title.replace(/:/g, ' -')}`;
 
-    // Encode the folder name for the initial request
-    const encodedFolder = encodeURIComponent(folderName)
-        .replace(/\(/g, '%28')
-        .replace(/\)/g, '%29');
+    // Helper to fix spaces and parens without breaking slashes
+    const cleanPathPart = (part) => {
+        return part.replace(/ /g, '%20').replace(/\(/g, '%28').replace(/\)/g, '%29');
+    };
 
     const pathType = season === null ? 'movies' : 'tvs';
-    const baseUrl = `${DAHMER_MOVIES_API}/${pathType}/${encodedFolder}/`;
+    const baseUrl = `${DAHMER_MOVIES_API}/${pathType}/${cleanPathPart(folderName)}/`;
     
     console.log(`[DahmerMovies] Requesting: ${baseUrl}`);
 
@@ -85,21 +85,14 @@ function invokeDahmerMovies(title, year, season = null, episode = null) {
         return filteredPaths.map(path => {
             let finalUrl;
             
-            // If href is a relative filename (e.g. "Movie.mkv"), join it
-            // If href is a full path (e.g. "/movies/Title/Movie.mkv"), join with domain
             if (path.href.startsWith('http')) {
-                finalUrl = path.href;
+                finalUrl = cleanPathPart(path.href);
             } else if (path.href.startsWith('/')) {
-                finalUrl = DAHMER_MOVIES_API + path.href;
+                // If the server gives a root path, we only clean the path part, not the domain
+                finalUrl = DAHMER_MOVIES_API + cleanPathPart(path.href);
             } else {
-                finalUrl = baseUrl + path.href;
+                finalUrl = baseUrl + cleanPathPart(path.href);
             }
-
-            // Finally, fix spaces and parentheses in the generated URL
-            finalUrl = finalUrl
-                .replace(/ /g, '%20')
-                .replace(/\(/g, '%28')
-                .replace(/\)/g, '%29');
             
             return {
                 name: "DahmerMovies",
