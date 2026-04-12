@@ -273,7 +273,7 @@ function invokeDahmerMovies(title, year, season = null, episode = null) {
                 } catch (error) {
                     // Fallback: manually encode if URL parsing fails
                     console.log(`[DahmerMovies] URL parsing failed, manually encoding: ${path.href}`);
-                    fullUrl = path.href.replace(/ /g, '%20');
+                    fullUrl = encodeURI(decodeURI(path.href));
                 }
             } else {
                 // Relative path - combine with encoded base URL
