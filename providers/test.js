@@ -8,10 +8,6 @@ const TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 const DAHMER_MOVIES_API = 'https://a.111477.xyz';
 const TIMEOUT = 60000;
 
-const Qualities = {
-    Unknown: 0, P144: 144, P240: 240, P360: 360, P480: 480, P720: 720, P1080: 1080, P1440: 1440, P2160: 2160
-};
-
 function makeRequest(url, options = {}) {
     return fetch(url, {
         timeout: TIMEOUT,
@@ -54,21 +50,17 @@ function parseLinks(html) {
         const href = linkMatch[1];
         const text = linkMatch[2].trim();
         if (!text || href === '../' || text === '../') continue;
-        let size = null;
-        const sizeMatch = rowMatch[1].match(/<td[^>]*data-sort=["']?(\d+)["']?[^>]*>(\d+)<\/td>/i);
-        if (sizeMatch) size = sizeMatch[2];
-        links.push({ text, href, size });
+        links.push({ text, href });
     }
     return links;
 }
 
 function invokeDahmerMovies(title, year, season = null, episode = null) {
-    // Clean and encode the folder name correctly
     const folderName = season === null 
         ? `${title.replace(/:/g, '')} (${year})`
         : `${title.replace(/:/g, ' -')}`;
 
-    // Ensure base folder has encoded parens
+    // Encode the folder name for the initial request
     const encodedFolder = encodeURIComponent(folderName)
         .replace(/\(/g, '%28')
         .replace(/\)/g, '%29');
@@ -76,6 +68,8 @@ function invokeDahmerMovies(title, year, season = null, episode = null) {
     const pathType = season === null ? 'movies' : 'tvs';
     const baseUrl = `${DAHMER_MOVIES_API}/${pathType}/${encodedFolder}/`;
     
+    console.log(`[DahmerMovies] Requesting: ${baseUrl}`);
+
     return makeRequest(baseUrl).then(res => res.text()).then(html => {
         const paths = parseLinks(html);
         let filteredPaths;
@@ -89,26 +83,23 @@ function invokeDahmerMovies(title, year, season = null, episode = null) {
         }
         
         return filteredPaths.map(path => {
-            // If the scraped href is relative (just the filename), join it to baseUrl
-            // If it's already a partial path like /movies/Title/file.mkv, we just use the domain
             let finalUrl;
-            let fileName = path.href;
-
-            if (fileName.startsWith('http')) {
-                finalUrl = fileName.replace(/ /g, '%20').replace(/\(/g, '%28').replace(/\)/g, '%29');
+            
+            // If href is a relative filename (e.g. "Movie.mkv"), join it
+            // If href is a full path (e.g. "/movies/Title/Movie.mkv"), join with domain
+            if (path.href.startsWith('http')) {
+                finalUrl = path.href;
+            } else if (path.href.startsWith('/')) {
+                finalUrl = DAHMER_MOVIES_API + path.href;
             } else {
-                // Encode the filename and fix parens
-                const encodedFile = encodeURIComponent(decodeURIComponent(fileName))
-                    .replace(/\(/g, '%28')
-                    .replace(/\)/g, '%29');
-                
-                // If the href already contains the full path from the root, don't double up
-                if (fileName.startsWith('/')) {
-                    finalUrl = DAHMER_MOVIES_API + encodedFile;
-                } else {
-                    finalUrl = baseUrl + encodedFile;
-                }
+                finalUrl = baseUrl + path.href;
             }
+
+            // Finally, fix spaces and parentheses in the generated URL
+            finalUrl = finalUrl
+                .replace(/ /g, '%20')
+                .replace(/\(/g, '%28')
+                .replace(/\)/g, '%29');
             
             return {
                 name: "DahmerMovies",
@@ -119,7 +110,10 @@ function invokeDahmerMovies(title, year, season = null, episode = null) {
                 filename: path.text
             };
         });
-    }).catch(() => []);
+    }).catch(err => {
+        console.log(`[DahmerMovies] Fetch Error: ${err.message}`);
+        return [];
+    });
 }
 
 function getStreams(tmdbId, mediaType = 'movie', seasonNum = null, episodeNum = null) {
