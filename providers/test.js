@@ -1,22 +1,17 @@
-// Dahmer Movies Scraper - Linear High-Speed Fix
-// Optimized for: Peaky Blinders (2025), Zootopia 2, Send Help, Mercy
+// Dahmer Movies Scraper - simplified & Robust
+// Fixes: Peaky Blinders (2025), Zootopia 2, Send Help
 
-console.log('[DahmerMovies] Initializing Final High-Speed Scraper');
+console.log('[DahmerMovies] Initializing Scraper');
 
 const TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 const DAHMER_MOVIES_API = 'https://a.111477.xyz';
 
 async function makeRequest(url) {
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), 12000); // 12s timeout
-
     return fetch(url, {
-        signal: controller.signal,
         headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
     }).then(res => {
-        clearTimeout(id);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res;
     });
@@ -39,7 +34,7 @@ async function invokeDahmerMovies(title, year, season = null, episode = null) {
     const pathType = season === null ? 'movies' : 'tvs';
     const cleanTitle = title.replace(/:/g, '');
     
-    // Most reliable variations based on your screenshots
+    // Most successful folder formats
     const variations = [
         `${cleanTitle} (${year})`,
         cleanTitle
@@ -48,10 +43,12 @@ async function invokeDahmerMovies(title, year, season = null, episode = null) {
     let html = '';
     let finalBaseUrl = '';
 
-    // Linear check: Try Variation 1, if it fails, try Variation 2
-    for (const folder of variations) {
-        const enc = encodeURIComponent(folder).replace(/\(/g, '%28').replace(/\)/g, '%29');
-        let tryUrl = `${DAHMER_MOVIES_API}/${pathType}/${enc}/`;
+    // Standard loop - high compatibility
+    for (let i = 0; i < variations.length; i++) {
+        const folder = variations[i];
+        // Clean manually to avoid environment issues with encodeURIComponent
+        const safeFolder = folder.replace(/ /g, '%20').replace(/\(/g, '%28').replace(/\)/g, '%29');
+        let tryUrl = `${DAHMER_MOVIES_API}/${pathType}/${safeFolder}/`;
         
         if (season !== null) {
             const s = season < 10 ? '0' + season : season;
@@ -59,16 +56,15 @@ async function invokeDahmerMovies(title, year, season = null, episode = null) {
         }
 
         try {
-            console.log(`[DahmerMovies] Attempting: ${tryUrl}`);
             const res = await makeRequest(tryUrl);
             const text = await res.text();
             if (text && text.includes('<a')) {
                 html = text;
                 finalBaseUrl = tryUrl;
-                break; // Found it! Stop searching.
+                break; 
             }
         } catch (e) {
-            console.log(`[DahmerMovies] Failed variation: ${folder}`);
+            continue;
         }
     }
 
@@ -76,9 +72,8 @@ async function invokeDahmerMovies(title, year, season = null, episode = null) {
 
     const paths = parseLinks(html);
     
-    // Filter logic: 
-    // Movies = grab all video files (Zoomania fix)
-    // TV = match episode pattern
+    // Movie mode: take all videos (Zoomania/Zootopia fix)
+    // TV mode: match episode
     const filtered = (season !== null) 
         ? paths.filter(p => {
             const s = season < 10 ? `0${season}` : `${season}`;
@@ -86,12 +81,13 @@ async function invokeDahmerMovies(title, year, season = null, episode = null) {
             const pattern = new RegExp(`(S${s}E${e}|${season}x${e}|[\\s\\.\\-_]${e}[\\s\\.\\-_]|^${e}\\s)`, 'i');
             return pattern.test(p.text) || pattern.test(p.href);
           })
-        : paths.filter(p => /\.(mkv|mp4|avi|webm)$/i.test(p.href));
+        : paths.filter(p => /\.(mkv|mp4|avi)$/i.test(p.href));
 
     return filtered.map(path => {
-        const resolved = new URL(path.href, finalBaseUrl).href;
+        // Use standard string concat for maximum compatibility
+        let resolved = path.href.startsWith('http') ? path.href : (finalBaseUrl + path.href);
         
-        // Final playback-safe encoding
+        // Final cleanup for player
         const finalUrl = decodeURIComponent(resolved)
             .replace(/ /g, '%20')
             .replace(/\(/g, '%28')
