@@ -1,11 +1,11 @@
-// Dahmer Movies Scraper - Ultra-Permissive Mode
-// Fixed: Zootopia 2 (Zoomania), Send Help, Peaky Blinders, Crime 101
+// Dahmer Movies Scraper - High Speed Optimized
+// Optimized for: Send Help, Zootopia 2, Peaky Blinders, Crime 101
 
 console.log('[DahmerMovies] Initializing Scraper');
 
 const TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 const DAHMER_MOVIES_API = 'https://a.111477.xyz';
-const TIMEOUT = 60000;
+const TIMEOUT = 15000; // Reduced timeout per request to skip dead folders faster
 
 async function makeRequest(url) {
     return fetch(url, {
@@ -36,22 +36,23 @@ async function invokeDahmerMovies(title, year, season = null, episode = null) {
     const pathType = season === null ? 'movies' : 'tvs';
     const cleanTitle = title.replace(/:/g, '');
     
-    // Variations to find the folder
+    // PRIORITIZED VARIATIONS: Based on your screenshots
     const folderVariations = [];
     if (season === null) {
-        folderVariations.push(`${cleanTitle} (${year})`);
-        folderVariations.push(`${cleanTitle.replace(/ /g, '.')}.${year}`);
-        folderVariations.push(cleanTitle);
+        folderVariations.push(`${cleanTitle} (${year})`); // Primary: Zootopia 2 (2025)
+        folderVariations.push(cleanTitle);              // Secondary: Goat
+        folderVariations.push(`${cleanTitle.replace(/ /g, '.')}.${year}`); // Fallback: Send.Help.2026
     } else {
         folderVariations.push(cleanTitle);
-        folderVariations.push(cleanTitle.replace(/ /g, '.'));
         folderVariations.push(`${cleanTitle} -`); 
     }
 
     let html = '';
     let finalBaseUrl = '';
 
+    // Fast-tracking the search
     for (const folder of folderVariations) {
+        // Correct encoding for folder requests
         const encodedFolder = encodeURIComponent(folder).replace(/\(/g, '%28').replace(/\)/g, '%29');
         let tryUrl = `${DAHMER_MOVIES_API}/${pathType}/${encodedFolder}/`;
         
@@ -66,6 +67,7 @@ async function invokeDahmerMovies(title, year, season = null, episode = null) {
             finalBaseUrl = tryUrl;
             if (html && html.includes('<a')) break;
         } catch (e) {
+            // Quick TV fallback for non-zero padded seasons
             if (season !== null) {
                 try {
                     let altUrl = `${DAHMER_MOVIES_API}/${pathType}/${encodedFolder}/Season%20${season}/`;
@@ -81,24 +83,21 @@ async function invokeDahmerMovies(title, year, season = null, episode = null) {
     if (!html) return [];
 
     const paths = parseLinks(html);
-    let filteredPaths = [];
-
-    if (season !== null) {
-        // TV Mode: Still need to match the episode number
-        const s = season < 10 ? `0${season}` : `${season}`;
-        const e = episode < 10 ? `0${episode}` : `${episode}`;
-        const epPattern = new RegExp(`(S${s}E${e}|${season}x${e}|[\\s\\.\\-]${e}[\\s\\.\\-]|_${e}_|^${e}\\s)`, 'i');
-        filteredPaths = paths.filter(p => epPattern.test(p.text) || epPattern.test(p.href));
-    } else {
-        // MOVIE MODE: Take EVERYTHING in the folder that is a video file.
-        // This solves the Zootopia/Zoomania mismatch.
-        filteredPaths = paths.filter(p => /\.(mkv|mp4|avi)$/i.test(p.href));
-    }
+    
+    // Filter logic
+    let filteredPaths = (season !== null) 
+        ? paths.filter(p => {
+            const s = season < 10 ? `0${season}` : `${season}`;
+            const e = episode < 10 ? `0${episode}` : `${episode}`;
+            const epPattern = new RegExp(`(S${s}E${e}|${season}x${e}|[\\s\\.\\-_]${e}[\\s\\.\\-_]|^${e}\\s)`, 'i');
+            return epPattern.test(p.text) || epPattern.test(p.href);
+          })
+        : paths.filter(p => /\.(mkv|mp4|avi|webm)$/i.test(p.href));
 
     return filteredPaths.map(path => {
         const resolvedUrl = new URL(path.href, finalBaseUrl).href;
 
-        // Clean encoding for playback
+        // Final safe encoding for playback
         const finalUrl = decodeURIComponent(resolvedUrl)
             .replace(/ /g, '%20')
             .replace(/\(/g, '%28')
@@ -106,7 +105,7 @@ async function invokeDahmerMovies(title, year, season = null, episode = null) {
 
         const t = path.text.toLowerCase();
         let quality = 'HD';
-        if (t.includes('2160') || t.includes('4k') || t.includes('uhd')) quality = '2160p';
+        if (t.includes('2160') || t.includes('4k')) quality = '2160p';
         else if (t.includes('1440')) quality = '1440p';
         else if (t.includes('1080')) quality = '1080p';
         else if (t.includes('720')) quality = '720p';
