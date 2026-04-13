@@ -1,5 +1,5 @@
-// Dahmer Movies Scraper - simplified & Robust
-// Fixes: Peaky Blinders (2025), Zootopia 2, Send Help
+// Dahmer Movies Scraper - Unified Path & Playback Fix
+// Fixes: Double /movies/ error, Peaky Blinders (2025), Zootopia 2, Send Help
 
 console.log('[DahmerMovies] Initializing Scraper');
 
@@ -34,19 +34,14 @@ async function invokeDahmerMovies(title, year, season = null, episode = null) {
     const pathType = season === null ? 'movies' : 'tvs';
     const cleanTitle = title.replace(/:/g, '');
     
-    // Most successful folder formats
-    const variations = [
-        `${cleanTitle} (${year})`,
-        cleanTitle
-    ];
+    // Variations: Try "Title (Year)" first as it is the most successful
+    const variations = [`${cleanTitle} (${year})`, cleanTitle];
 
     let html = '';
     let finalBaseUrl = '';
 
-    // Standard loop - high compatibility
     for (let i = 0; i < variations.length; i++) {
         const folder = variations[i];
-        // Clean manually to avoid environment issues with encodeURIComponent
         const safeFolder = folder.replace(/ /g, '%20').replace(/\(/g, '%28').replace(/\)/g, '%29');
         let tryUrl = `${DAHMER_MOVIES_API}/${pathType}/${safeFolder}/`;
         
@@ -63,32 +58,35 @@ async function invokeDahmerMovies(title, year, season = null, episode = null) {
                 finalBaseUrl = tryUrl;
                 break; 
             }
-        } catch (e) {
-            continue;
-        }
+        } catch (e) { continue; }
     }
 
     if (!html) return [];
 
     const paths = parseLinks(html);
-    
-    // Movie mode: take all videos (Zoomania/Zootopia fix)
-    // TV mode: match episode
     const filtered = (season !== null) 
         ? paths.filter(p => {
             const s = season < 10 ? `0${season}` : `${season}`;
             const e = episode < 10 ? `0${episode}` : `${episode}`;
-            const pattern = new RegExp(`(S${s}E${e}|${season}x${e}|[\\s\\.\\-_]${e}[\\s\\.\\-_]|^${e}\\s)`, 'i');
-            return pattern.test(p.text) || pattern.test(p.href);
+            return new RegExp(`(S${s}E${e}|${season}x${e}|[\\s\\.\\-_]${e}[\\s\\.\\-_]|^${e}\\s)`, 'i').test(p.text);
           })
         : paths.filter(p => /\.(mkv|mp4|avi)$/i.test(p.href));
 
     return filtered.map(path => {
-        // Use standard string concat for maximum compatibility
-        let resolved = path.href.startsWith('http') ? path.href : (finalBaseUrl + path.href);
+        // SMART PATH JOINER: Prevents the /movies/movies/ error
+        let finalUrl;
+        if (path.href.startsWith('/')) {
+            // If path is "/movies/file.mkv", join with domain only
+            finalUrl = DAHMER_MOVIES_API + path.href;
+        } else if (path.href.startsWith('http')) {
+            finalUrl = path.href;
+        } else {
+            // If path is just "file.mkv", join with the full folder URL
+            finalUrl = finalBaseUrl + path.href;
+        }
         
-        // Final cleanup for player
-        const finalUrl = decodeURIComponent(resolved)
+        // Final cleanup for player (fixes ( ) and spaces)
+        const playerUrl = decodeURIComponent(finalUrl)
             .replace(/ /g, '%20')
             .replace(/\(/g, '%28')
             .replace(/\)/g, '%29');
@@ -102,7 +100,7 @@ async function invokeDahmerMovies(title, year, season = null, episode = null) {
         return {
             name: "DahmerMovies",
             title: `DahmerMovies ${path.text}`,
-            url: finalUrl,
+            url: playerUrl,
             quality: q,
             provider: "dahmermovies",
             filename: path.text
@@ -117,15 +115,9 @@ async function getStreams(tmdbId, mediaType = 'movie', seasonNum = null, episode
         const data = await res.json();
         const title = mediaType === 'tv' ? data.name : data.title;
         const year = (mediaType === 'tv' ? data.first_air_date : data.release_date)?.substring(0, 4);
-        
         return await invokeDahmerMovies(title, year ? parseInt(year) : null, seasonNum, episodeNum);
-    } catch (e) {
-        return [];
-    }
+    } catch (e) { return []; }
 }
 
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { getStreams };
-} else {
-    global.getStreams = getStreams;
-}
+if (typeof module !== 'undefined' && module.exports) { module.exports = { getStreams }; } 
+else { global.getStreams = getStreams; }
