@@ -437,7 +437,7 @@
       "name": "RGShows",
       "description": "Discover and stream your favorite Movies, TV Shows & Anime.",
       "version": "1.0.0",
-      "author": "Nuvio Team",
+      "author": "P-Stream Team",
       "supportedTypes": ["movie", "tv"],
       "filename": "providers/rgshows.js",
       "enabled": true,
