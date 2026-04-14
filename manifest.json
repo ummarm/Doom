@@ -435,14 +435,14 @@
     {
       "id": "rgshows",
       "name": "RGShows",
-      "description": "Direct links via RGShows.ru",
+      "description": "Discover and stream your favorite Movies, TV Shows & Anime.",
       "version": "1.0.0",
       "author": "Nuvio Team",
       "supportedTypes": ["movie", "tv"],
       "filename": "providers/rgshows.js",
       "enabled": true,
       "formats": ["mp4", "m3u8"],
-      "logo": "",
+      "logo": "https://i.postimg.cc/kXNS9837/rgshows.png",
       "contentLanguage": ["en"]
     },
     {
