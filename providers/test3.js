@@ -1,6 +1,3 @@
-// PrimeSrc Scraper for Nuvio
-// Identical structure to working version - Added Embed Flags
-
 const PRIMESRC_BASE = "https://primesrc.me/api/v1/";
 const PRIMESRC_SITE = "https://primesrc.me";
 
@@ -18,7 +15,7 @@ function getStreams(id, mediaType, season, episode) {
         url += "&season=" + season + "&episode=" + episode;
     }
 
-    // UA matching your successful mobile playback
+    // Exact UA and Referer from your working logs
     var ua = "Mozilla/5.0 (Linux; Android 15; ALT-NX1 Build/HONORALT-N31; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.7680.177 Mobile Safari/537.36";
 
     return fetch(url, {
@@ -32,34 +29,21 @@ function getStreams(id, mediaType, season, episode) {
         return response.json();
     })
     .then(function(data) {
-        if (!data || !data.servers || !Array.isArray(data.servers)) {
-            return [];
-        }
+        if (!data || !data.servers) return [];
 
         return data.servers.map(function(server) {
-            var embedUrl = PRIMESRC_SITE + "/embed/" + type + "?";
-            if (typeof id === 'string' && id.startsWith('tt')) {
-                embedUrl += "imdb=" + id;
-            } else {
-                embedUrl += "tmdb=" + id;
-            }
-
-            if (type === "tv") {
-                embedUrl += "&season=" + season + "&episode=" + episode;
-            }
-            
-            embedUrl += "&whitelistServers=" + encodeURIComponent(server.name);
+            // FIX: Instead of /embed/, we use the /api/v1/l endpoint
+            // This is the "Link" endpoint that returns the actual video file
+            var playbackUrl = PRIMESRC_BASE + "l?key=" + server.key;
 
             return {
                 name: "PrimeSrc - " + server.name,
-                url: embedUrl,
-                quality: "Auto",
-                // This tells the app to use a Browser/Webview instead of ExoPlayer
-                renderType: "embed", 
-                isEmbed: true,
+                url: playbackUrl,
+                quality: "1080p",
                 headers: { 
                     "User-Agent": ua,
-                    "Referer": PRIMESRC_SITE + "/" 
+                    "Referer": PRIMESRC_SITE + "/",
+                    "Accept": "*/*"
                 }
             };
         });
