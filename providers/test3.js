@@ -15,7 +15,6 @@ function getStreams(id, mediaType, season, episode) {
         url += "&season=" + season + "&episode=" + episode;
     }
 
-    // This UA must be consistent to avoid the 403
     var ua = "Mozilla/5.0 (Linux; Android 15; ALT-NX1 Build/HONORALT-N31; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.7680.177 Mobile Safari/537.36";
 
     return fetch(url, {
@@ -30,21 +29,40 @@ function getStreams(id, mediaType, season, episode) {
     .then(function(data) {
         if (!data || !data.servers) return [];
 
-        return data.servers.map(function(s) {
-            // Check for key, then id, then hash to fix the 'undefined'
-            var streamId = s.key || s.id || s.hash;
+        return data.servers.map(function(server) {
+            // Since /l?key= was returning undefined, we go back to the 
+            // embed structure BUT we add the specific headers you provided
+            // to the object so the player can actually handshake with the site.
             
+            var embedUrl = PRIMESRC_SITE + "/embed/" + type + "?";
+            if (typeof id === 'string' && id.indexOf('tt') === 0) {
+                embedUrl += "imdb=" + id;
+            } else {
+                embedUrl += "tmdb=" + id;
+            }
+
+            if (type === "tv") {
+                embedUrl += "&season=" + season + "&episode=" + episode;
+            }
+            
+            embedUrl += "&whitelistServers=" + encodeURIComponent(server.name);
+
+            // Determine which referer to use based on the server name
+            var playRef = "https://streamta.site/";
+            if (server.name === "Voe") {
+                playRef = "https://marissasharecareer.com/";
+            }
+
             return {
-                name: "PrimeSrc - " + (s.name || "HD"),
-                url: PRIMESRC_BASE + "l?key=" + streamId,
+                name: "PrimeSrc - " + server.name,
+                url: embedUrl,
                 quality: "1080p",
                 headers: { 
                     "User-Agent": ua,
-                    "Referer": "https://streamta.site/",
-                    "Origin": "https://streamta.site",
+                    "Referer": playRef,
+                    "Origin": playRef.replace(/\/$/, ""),
                     "Accept": "*/*",
-                    "sec-ch-ua-platform": "Android",
-                    "sec-ch-ua-mobile": "?1"
+                    "Accept-Encoding": "identity;q=1, *;q=0"
                 }
             };
         });
