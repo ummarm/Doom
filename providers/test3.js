@@ -15,7 +15,6 @@ function getStreams(id, mediaType, season, episode) {
         url += "&season=" + season + "&episode=" + episode;
     }
 
-    // Exact UA and Referer from your logs to ensure the redirect is authorized
     var ua = "Mozilla/5.0 (Linux; Android 15; ALT-NX1 Build/HONORALT-N31; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.7680.177 Mobile Safari/537.36";
 
     return fetch(url, {
@@ -29,25 +28,44 @@ function getStreams(id, mediaType, season, episode) {
         return response.json();
     })
     .then(function(data) {
-        if (!data || !data.servers || !Array.isArray(data.servers)) {
-            return [];
-        }
+        if (!data || !data.servers) return [];
 
         return data.servers.map(function(s) {
-            // Corrected the variable name to 's' to match the function argument
-            var playbackUrl = PRIMESRC_BASE + "l?key=" + s.key;
+            // Safety check for the key property name
+            var serverKey = s.key || s.keyId || s.id;
+            if (!serverKey) return null;
+
+            var playbackUrl = PRIMESRC_BASE + "l?key=" + serverKey;
+            
+            // Default Referer
+            var streamRef = PRIMESRC_SITE + "/";
+            var streamOrigin = PRIMESRC_SITE;
+
+            // Specific Header Logic from your working logs
+            var serverName = (s.name || "").toLowerCase();
+            if (serverName.indexOf("voe") !== -1) {
+                streamRef = "https://marissasharecareer.com/";
+                streamOrigin = "https://marissasharecareer.com";
+            } else if (serverName.indexOf("streamta") !== -1 || serverName.indexOf("tape") !== -1) {
+                streamRef = "https://streamta.site/";
+                streamOrigin = "https://streamta.site";
+            }
 
             return {
-                name: "PrimeSrc - " + (s.name || "Server"),
+                name: "PrimeSrc - " + (s.name || "HD"),
                 url: playbackUrl,
                 quality: "1080p",
                 headers: { 
                     "User-Agent": ua,
-                    "Referer": PRIMESRC_SITE + "/",
-                    "Accept": "*/*"
+                    "Referer": streamRef,
+                    "Origin": streamOrigin,
+                    "Accept": "*/*",
+                    "Accept-Encoding": "identity;q=1, *;q=0",
+                    "sec-ch-ua-platform": "Android",
+                    "sec-ch-ua-mobile": "?1"
                 }
             };
-        });
+        }).filter(function(item) { return item !== null; });
     })
     .catch(function(error) {
         return [];
