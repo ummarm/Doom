@@ -15,6 +15,7 @@ function getStreams(id, mediaType, season, episode) {
         url += "&season=" + season + "&episode=" + episode;
     }
 
+    // This UA must be consistent to avoid the 403
     var ua = "Mozilla/5.0 (Linux; Android 15; ALT-NX1 Build/HONORALT-N31; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.7680.177 Mobile Safari/537.36";
 
     return fetch(url, {
@@ -29,10 +30,13 @@ function getStreams(id, mediaType, season, episode) {
     .then(function(data) {
         if (!data || !data.servers) return [];
 
-        return data.servers.map(function(server) {
+        return data.servers.map(function(s) {
+            // Check for key, then id, then hash to fix the 'undefined'
+            var streamId = s.key || s.id || s.hash;
+            
             return {
-                name: "PrimeSrc - " + server.name,
-                url: PRIMESRC_BASE + "l?key=" + server.key,
+                name: "PrimeSrc - " + (s.name || "HD"),
+                url: PRIMESRC_BASE + "l?key=" + streamId,
                 quality: "1080p",
                 headers: { 
                     "User-Agent": ua,
