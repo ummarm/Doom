@@ -1,5 +1,5 @@
 // ============================================================
-// Einthusan Provider - Minimal Direct Fetch
+// Einthusan Provider for Nuvio (2026 Hermes Fix)
 // ============================================================
 
 var BASE_URL = 'https://einthusan.tv';
@@ -7,43 +7,60 @@ var BASE_URL = 'https://einthusan.tv';
 var HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Linux; Android 15; ALT-NX1 Build/HONORALT-N31; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.7680.177 Mobile Safari/537.36',
   'Referer': 'https://einthusan.tv/',
-  'sec-ch-ua': '"Chromium";v="146", "Not-A.Brand";v="24", "Android WebView";v="146"',
-  'Accept': '*/*'
+  'X-Requested-With': 'XMLHttpRequest'
 };
+
+// Custom decryption for Einthusan EJLinks
+function decryptEJ(data) {
+  try {
+    // Einthusan shuffle: 10 chars + last char + mid section
+    var shuffled = data.substring(0, 10) + data.substring(data.length - 1) + data.substring(12, data.length - 1);
+    // Base64 decode (Nuvio has global atob)
+    return JSON.parse(atob(shuffled));
+  } catch (e) {
+    return null;
+  }
+}
 
 function getStreams(tmdbId, mediaType) {
   return new Promise(function (resolve) {
-    // Manually testing with ID 661t
-    var watchUrl = BASE_URL + '/movie/watch/661t/?lang=hindi';
+    // Testing with the ID you provided
+    var movieId = '21lw'; 
+    var ajaxUrl = BASE_URL + '/ajax/movie/watch/' + movieId + '/';
 
-    fetch(watchUrl, { headers: HEADERS })
-      .then(function (res) { 
-        console.log('HTTP Status: ' + res.status); 
-        return res.text(); 
-      })
+    // Step 1: Hit the page to get the PageID (CSRF)
+    fetch(BASE_URL + '/movie/watch/' + movieId + '/?lang=hindi', { headers: HEADERS })
+      .then(function (res) { return res.text(); })
       .then(function (html) {
-        // Log the first 200 characters to see if we hit a "403 Forbidden" or "Cloudflare"
-        console.log('Source Snippet: ' + html.substring(0, 200).replace(/\s+/g, ' '));
+        var pageIdMatch = html.match(/data-pageid="([^"]+)"/);
+        var pageId = pageIdMatch ? pageIdMatch[1] : '';
+        
+        // Step 2: Request the AJAX link data
+        return fetch(ajaxUrl, {
+          method: 'POST',
+          headers: Object.assign({}, HEADERS, { 'Content-Type': 'application/x-www-form-urlencoded' }),
+          body: 'xEvent=UIVideoPlayer.PingOutcome&xJson={"NativeHLS":true}&arcVersion=3&appVersion=59&gorilla.csrf.Token=' + pageId
+        });
+      })
+      .then(function (res) { return res.json(); })
+      .then(function (json) {
+        var videoData = json.Data;
+        if (videoData && videoData.EJLinks) {
+          var links = decryptEJ(videoData.EJLinks);
+          var finalUrl = (links.HLSLink || links.MP4Link).replace(/&amp;/g, '&');
 
-        // Attempt to find the link in the raw source
-        var match = html.match(/["'](https?:\/\/[^"']+\.(?:m3u8|mp4)[^"']*)["']/i);
-
-        if (match) {
-          var streamUrl = match[1].replace(/&amp;/g, '&').replace(/\\/g, '');
-          console.log('Link Found: ' + streamUrl);
           resolve([{
-            url: streamUrl,
+            url: finalUrl,
             quality: 'HD',
-            format: streamUrl.indexOf('m3u8') !== -1 ? 'm3u8' : 'mp4',
+            format: finalUrl.indexOf('m3u8') !== -1 ? 'm3u8' : 'mp4',
             headers: HEADERS
           }]);
         } else {
-          console.log('No link found in source. Page may be blocked or link is JS-generated.');
           resolve([]);
         }
       })
       .catch(function (err) {
-        console.log('Fetch Error: ' + err);
+        console.log('Provider Error: ' + err);
         resolve([]);
       });
   });
