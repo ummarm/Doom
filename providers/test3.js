@@ -1,5 +1,5 @@
 // ============================================================
-// Einthusan Provider for Nuvio (Promise Only - No Async)
+// Einthusan Provider - Minimal Direct Fetch
 // ============================================================
 
 var BASE_URL = 'https://einthusan.tv';
@@ -13,43 +13,37 @@ var HEADERS = {
 
 function getStreams(tmdbId, mediaType) {
   return new Promise(function (resolve) {
-    // Hardcoded test ID '661t' based on your previous working link
+    // Manually testing with ID 661t
     var watchUrl = BASE_URL + '/movie/watch/661t/?lang=hindi';
 
     fetch(watchUrl, { headers: HEADERS })
-      .then(function (res) { return res.text(); })
+      .then(function (res) { 
+        console.log('HTTP Status: ' + res.status); 
+        return res.text(); 
+      })
       .then(function (html) {
-        // Log page length to check if we are being blocked by Cloudflare (usually small page)
-        console.log('Page Load Success. Length: ' + html.length);
+        // Log the first 200 characters to see if we hit a "403 Forbidden" or "Cloudflare"
+        console.log('Source Snippet: ' + html.substring(0, 200).replace(/\s+/g, ' '));
 
-        // Pattern 1: Standard CDN link
-        var pattern1 = /["'](https?:\/\/cdn1\.einthusan\.io\/[^"']+\.(?:m3u8|mp4)[^"']*)["']/i;
-        // Pattern 2: Search for any JSON-like URL property (common for hidden players)
-        var pattern2 = /"(?:url|file|src)"\s*:\s*"([^"]+\.(?:m3u8|mp4)[^"]*)"/i;
-        
-        var match = html.match(pattern1) || html.match(pattern2);
+        // Attempt to find the link in the raw source
+        var match = html.match(/["'](https?:\/\/[^"']+\.(?:m3u8|mp4)[^"']*)["']/i);
 
         if (match) {
-          var streamUrl = match[1].replace(/&amp;/g, '&').replace(/\\/g, '').trim();
-          console.log('Stream Found: ' + streamUrl);
-
+          var streamUrl = match[1].replace(/&amp;/g, '&').replace(/\\/g, '');
+          console.log('Link Found: ' + streamUrl);
           resolve([{
             url: streamUrl,
             quality: 'HD',
             format: streamUrl.indexOf('m3u8') !== -1 ? 'm3u8' : 'mp4',
-            headers: {
-              'User-Agent': HEADERS['User-Agent'],
-              'Referer': 'https://einthusan.tv/',
-              'Origin': 'https://einthusan.tv'
-            }
+            headers: HEADERS
           }]);
         } else {
-          console.log('No link found in HTML source.');
+          console.log('No link found in source. Page may be blocked or link is JS-generated.');
           resolve([]);
         }
       })
       .catch(function (err) {
-        console.log('Fetch error: ' + err);
+        console.log('Fetch Error: ' + err);
         resolve([]);
       });
   });
