@@ -12,7 +12,7 @@ const HEADERS = {
 
 const API = 'https://enc-dec.app/api';
 const DB_API = 'https://enc-dec.app/db/kai';
-const KAI_AJAX = 'https://anikai.to/ajax';
+const KAI_AJAX = 'https://animekai.fi/ajax';
 const ARM_BASE = 'https://arm.haglund.dev/api/v2';
 
 // Debug helpers
