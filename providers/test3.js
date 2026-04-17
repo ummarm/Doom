@@ -1,14 +1,27 @@
+/* {
+  "name": "ShowBox Pro",
+  "author": "Nuvio User",
+  "version": "1.2.0",
+  "settings": [
+    {
+      "key": "uiToken",
+      "type": "text",
+      "label": "UI Token (Cookie)",
+      "placeholder": "Paste your ShowBox cookie here..."
+    },
+    {
+      "key": "ossGroup",
+      "type": "text",
+      "label": "OSS Group (Optional)",
+      "placeholder": "e.g. 12345"
+    }
+  ]
+} */
+
 /**
- * @name ShowBox Scraper
- * @description ShowBox API scraper for Nuvio
- * @settings
- * [
- * {"name": "uiToken", "type": "text", "label": "UI Token (Cookie)", "placeholder": "Paste token here..."},
- * {"name": "ossGroup", "type": "text", "label": "OSS Group (Optional)", "placeholder": "e.g. 12345"}
- * ]
+ * ShowBox Scraper for Nuvio (Android TV Optimized)
  */
 
-// ShowBox Scraper for Nuvio - Android TV Optimized
 const TMDB_API_KEY = '439c478a771f35c05022f9feabcca01c';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 const SHOWBOX_API_BASE = 'https://febapi.nuvioapp.space/api/media';
@@ -19,26 +32,21 @@ const WORKING_HEADERS = {
     'Content-Type': 'application/json'
 };
 
-// --- SETTINGS HANDLING ---
-// This function pulls from the "Settings" UI you see in Nuvio
+// --- SETTINGS RETRIEVAL ---
 function getSettingsValue(key) {
     try {
-        if (typeof global !== 'undefined' && global.SCRAPER_SETTINGS) {
-            return global.SCRAPER_SETTINGS[key] || '';
-        }
-        if (typeof window !== 'undefined' && window.SCRAPER_SETTINGS) {
-            return window.SCRAPER_SETTINGS[key] || '';
-        }
+        const settings = (typeof global !== 'undefined' && global.SCRAPER_SETTINGS) ? global.SCRAPER_SETTINGS : 
+                         (typeof window !== 'undefined' && window.SCRAPER_SETTINGS) ? window.SCRAPER_SETTINGS : {};
+        return settings[key] || '';
     } catch (e) {
-        console.error(`[ShowBox] Settings error: ${e.message}`);
+        return '';
     }
-    return '';
 }
 
-// --- NETWORK HELPER ---
+// --- NETWORK HELPER WITH TIMEOUT ---
 function makeRequest(url, options = {}) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000); // Slightly longer for TV
+    const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s for TV stability
 
     return fetch(url, {
         method: options.method || 'GET',
@@ -55,18 +63,21 @@ function makeRequest(url, options = {}) {
     });
 }
 
-// --- UTILS ---
-function getQuality(str) {
+// --- UTILITIES ---
+function formatQuality(str) {
     if (!str) return 'Unknown';
     const s = str.toUpperCase();
     if (s.includes('2160') || s.includes('4K')) return '4K';
     if (s.includes('1080')) return '1080p';
     if (s.includes('720')) return '720p';
+    if (s.includes('480')) return '480p';
     return str;
 }
 
 function getTMDBDetails(tmdbId, type) {
-    const url = `${TMDB_BASE_URL}/${type === 'tv' ? 'tv' : 'movie'}/${tmdbId}?api_key=${TMDB_API_KEY}`;
+    const endpoint = type === 'tv' ? 'tv' : 'movie';
+    const url = `${TMDB_BASE_URL}/${endpoint}/${tmdbId}?api_key=${TMDB_API_KEY}`;
+    
     return makeRequest(url)
         .then(res => res.json())
         .then(data => ({
@@ -76,51 +87,17 @@ function getTMDBDetails(tmdbId, type) {
         .catch(() => ({ title: 'Media', year: '' }));
 }
 
-// --- MAIN SCRAPER LOGIC ---
+// --- CORE SCRAPER FUNCTION ---
 function getStreams(tmdbId, mediaType = 'movie', seasonNum = null, episodeNum = null) {
     const cookie = getSettingsValue('uiToken');
     const ossGroup = getSettingsValue('ossGroup');
 
-    // If UI Token is missing, we can't scrape
     if (!cookie) {
-        console.log('[ShowBox] Error: Please enter UI Token in Scraper Settings');
+        console.log('[ShowBox] No UI Token found. Please enter it in Settings.');
         return Promise.resolve([]);
     }
 
     return getTMDBDetails(tmdbId, mediaType).then(info => {
-        let apiUrl = (mediaType === 'tv') 
-            ? `${SHOWBOX_API_BASE}/tv/${tmdbId}${ossGroup ? '/oss='+ossGroup : ''}/${seasonNum}/${episodeNum}?cookie=${encodeURIComponent(cookie)}`
-            : `${SHOWBOX_API_BASE}/movie/${tmdbId}?cookie=${encodeURIComponent(cookie)}`;
-
-        return makeRequest(apiUrl)
-            .then(res => res.json())
-            .then(data => {
-                if (!data || !data.versions) return [];
-                
-                const streams = [];
-                data.versions.forEach((v, idx) => {
-                    if (!v.links) return;
-                    v.links.forEach(l => {
-                        const q = getQuality(l.quality);
-                        streams.push({
-                            name: `ShowBox ${q}`,
-                            title: `${info.title} ${info.year ? '('+info.year+')' : ''}`,
-                            url: l.url,
-                            quality: q,
-                            provider: 'showbox'
-                        });
-                    });
-                });
-
-                return streams.sort((a, b) => {
-                    const rank = { '4K': 4, '1080p': 3, '720p': 2 };
-                    return (rank[b.quality] || 0) - (rank[a.quality] || 0);
-                });
-            })
-            .catch(() => []);
-    });
-}
-
-// Ensure Nuvio can see the function
-global.getStreams = getStreams;
-if (typeof module !== 'undefined') module.exports = { getStreams };
+        let apiUrl;
+        if (mediaType === 'tv') {
+            const ossPath = oss
